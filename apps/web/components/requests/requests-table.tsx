@@ -10,7 +10,16 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table';
-import { ArrowDown, ArrowUp, ArrowUpDown, Pencil, Search, Trash2 } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ClipboardCheck,
+  Link2,
+  Pencil,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,6 +32,8 @@ type StatusFilter = 'ALL' | 'OVERDUE' | (typeof REQUEST_STATUSES)[number];
 interface RequestsTableProps {
   requests: EvidenceRequestDto[];
   readOnly: boolean;
+  onReview: (request: EvidenceRequestDto) => void;
+  onCopyLink: (request: EvidenceRequestDto) => void;
   onEdit: (request: EvidenceRequestDto) => void;
   onDelete: (request: EvidenceRequestDto) => void;
 }
@@ -38,7 +49,14 @@ function matchesSearch(request: EvidenceRequestDto, query: string): boolean {
   return haystack.toLowerCase().includes(query.trim().toLowerCase());
 }
 
-export function RequestsTable({ requests, readOnly, onEdit, onDelete }: RequestsTableProps) {
+export function RequestsTable({
+  requests,
+  readOnly,
+  onReview,
+  onCopyLink,
+  onEdit,
+  onDelete,
+}: RequestsTableProps) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'dueDate', desc: false }]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
@@ -64,7 +82,13 @@ export function RequestsTable({ requests, readOnly, onEdit, onDelete }: Requests
         header: "What's needed",
         cell: ({ row }) => (
           <div className="min-w-48">
-            <p className="font-medium">{row.original.title}</p>
+            <button
+              type="button"
+              className="text-left font-medium hover:text-primary hover:underline"
+              onClick={() => onReview(row.original)}
+            >
+              {row.original.title}
+            </button>
             {row.original.instructions && (
               <p className="mt-0.5 line-clamp-1 text-xs text-muted">{row.original.instructions}</p>
             )}
@@ -103,36 +127,57 @@ export function RequestsTable({ requests, readOnly, onEdit, onDelete }: Requests
         id: 'actions',
         header: () => <span className="sr-only">Actions</span>,
         enableSorting: false,
-        cell: ({ row }) =>
-          readOnly ? null : (
-            <div className="flex justify-end gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Edit ${row.original.controlRef}`}
-                onClick={() => onEdit(row.original)}
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Delete ${row.original.controlRef}`}
-                disabled={row.original.hasSubmissions}
-                title={
-                  row.original.hasSubmissions
-                    ? 'Requests with submitted evidence can’t be deleted'
-                    : undefined
-                }
-                onClick={() => onDelete(row.original)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          ),
+        cell: ({ row }) => (
+          <div className="flex justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Review evidence for ${row.original.controlRef}`}
+              title="Review evidence"
+              onClick={() => onReview(row.original)}
+            >
+              <ClipboardCheck className="h-4 w-4" />
+            </Button>
+            {!readOnly && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Copy upload link for ${row.original.controlRef}`}
+                  title="Copy the owner's upload link"
+                  onClick={() => onCopyLink(row.original)}
+                >
+                  <Link2 className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Edit ${row.original.controlRef}`}
+                  onClick={() => onEdit(row.original)}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Delete ${row.original.controlRef}`}
+                  disabled={row.original.hasSubmissions}
+                  title={
+                    row.original.hasSubmissions
+                      ? 'Requests with submitted evidence can’t be deleted'
+                      : undefined
+                  }
+                  onClick={() => onDelete(row.original)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+          </div>
+        ),
       },
     ],
-    [readOnly, onEdit, onDelete],
+    [readOnly, onReview, onCopyLink, onEdit, onDelete],
   );
 
   const table = useReactTable({

@@ -32,8 +32,9 @@ async function request<T>(
   path: string,
   body?: unknown,
   contentType?: string,
+  extraHeaders?: Record<string, string>,
 ): Promise<T> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...extraHeaders };
   let payload: BodyInit | undefined;
   if (contentType) {
     headers['Content-Type'] = contentType;
@@ -75,10 +76,14 @@ async function request<T>(
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>('GET', path),
-  post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
-  patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
-  delete: (path: string) => request<void>('DELETE', path),
+  get: <T>(path: string, headers?: Record<string, string>) =>
+    request<T>('GET', path, undefined, undefined, headers),
+  post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+    request<T>('POST', path, body, undefined, headers),
+  patch: <T>(path: string, body: unknown, headers?: Record<string, string>) =>
+    request<T>('PATCH', path, body, undefined, headers),
+  delete: (path: string, headers?: Record<string, string>) =>
+    request<void>('DELETE', path, undefined, undefined, headers),
   postCsv: <T>(path: string, csv: string) => request<T>('POST', path, csv, 'text/csv'),
 };
 

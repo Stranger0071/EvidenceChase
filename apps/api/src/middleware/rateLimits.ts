@@ -27,6 +27,8 @@ export function createRateLimits() {
       20,
       'Too many accounts created from this network. Try again later.',
     ),
+    // Public magic-link routes: stops token guessing and upload-link spam (PRD §9.4).
+    owner: limiter(60_000, 30, 'Too many requests. Wait a minute and try again.'),
   };
 }
 

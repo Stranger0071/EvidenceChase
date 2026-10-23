@@ -68,3 +68,93 @@ export interface CsvImportErrorDetails {
 
 /** `details` of a 422 response for an invalid request body: field name → messages. */
 export type FieldErrors = Record<string, string[]>;
+
+export type FileState = 'PENDING_UPLOAD' | 'AWAITING_SCAN' | 'VERIFIED' | 'REJECTED';
+export type ScanStatus =
+  'NOT_SCANNED' | 'NO_THREATS_FOUND' | 'THREATS_FOUND' | 'UNSUPPORTED' | 'FAILED';
+
+/** File metadata. Storage keys are internal and never leave the API. */
+export interface EvidenceFileDto {
+  id: string;
+  originalName: string;
+  sizeBytes: number;
+  /** The type found in the file's content (magic bytes), falling back to the declared type. */
+  contentType: string;
+  state: FileState;
+  scanStatus: ScanStatus;
+  sha256: string | null;
+  retainUntil: string | null;
+  rejectReason: string | null;
+  createdAt: string;
+  verifiedAt: string | null;
+  /** True for images and PDFs, which can be shown inline in a sandboxed frame. */
+  previewable: boolean;
+}
+
+export interface SubmissionDto {
+  id: string;
+  note: string | null;
+  submittedAt: string;
+  isCurrent: boolean;
+  files: EvidenceFileDto[];
+}
+
+/** What a control owner sees through their magic link. */
+export interface OwnerPortalDto {
+  request: {
+    id: string;
+    controlRef: string;
+    title: string;
+    instructions: string | null;
+    ownerName: string | null;
+    dueDate: string;
+    status: RequestStatus;
+    isOverdue: boolean;
+    version: number;
+  };
+  auditName: string;
+  /** False once evidence is accepted or the audit is archived: the page is then read-only. */
+  canSubmit: boolean;
+  /** The comment that sent the request back to the owner, while changes are requested. */
+  changesComment: string | null;
+  currentSubmission: SubmissionDto | null;
+}
+
+export interface PreparedUploadDto {
+  fileId: string;
+  originalName: string;
+  /** A presigned S3 POST: send `fields` plus the file as multipart form data to `url`. */
+  upload: {
+    url: string;
+    fields: Record<string, string>;
+  };
+}
+
+export interface ActivityLogDto {
+  id: string;
+  actorType: 'MANAGER' | 'OWNER' | 'SYSTEM';
+  actorEmail: string | null;
+  action: string;
+  fromStatus: RequestStatus | null;
+  toStatus: RequestStatus | null;
+  comment: string | null;
+  createdAt: string;
+}
+
+export interface FileUrlDto {
+  url: string;
+  expiresInSeconds: number;
+}
+
+export interface MagicLinkDto {
+  url: string;
+  expiresAt: string;
+}
+
+export interface SendRequestsResultDto {
+  /** Emails sent: one per owner, listing all of their open requests. */
+  emailsSent: number;
+  requestsIncluded: number;
+  /** Owners whose email couldn't be sent. Their links still work via "Copy link". */
+  failedRecipients: string[];
+}

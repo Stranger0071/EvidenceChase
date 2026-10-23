@@ -5,11 +5,15 @@ import { useState, type ReactNode } from 'react';
 import { Toaster } from 'sonner';
 import { ApiError } from '@/lib/api-client';
 
-/** A 401 anywhere means the session expired: go to login, then come back here afterwards. */
+/**
+ * A 401 in the manager app means the session expired: go to login, then come back afterwards.
+ * Owner pages (/e/...) are excluded: owners have no account, and their link errors are shown
+ * on the page itself.
+ */
 function redirectToLoginOn401(error: unknown) {
   if (!(error instanceof ApiError) || error.status !== 401) return;
   const { pathname, search } = window.location;
-  if (pathname.startsWith('/login') || pathname.startsWith('/signup')) return;
+  if (['/login', '/signup', '/e/'].some((prefix) => pathname.startsWith(prefix))) return;
   window.location.assign(`/login?next=${encodeURIComponent(pathname + search)}`);
 }
 

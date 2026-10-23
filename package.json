@@ -16,7 +16,8 @@
     "test": "pnpm -r test",
     "test:integration": "pnpm --filter @evidencechase/api test:integration",
     "db:migrate": "pnpm --filter @evidencechase/api db:migrate",
-    "db:seed": "pnpm --filter @evidencechase/api db:seed"
+    "db:seed": "pnpm --filter @evidencechase/api db:seed",
+    "storage:setup": "pnpm --filter @evidencechase/api storage:setup"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",

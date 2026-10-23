@@ -14,12 +14,14 @@ the dashboard always shows how ready you are for the auditor.
 
 ## Status
 
-| Phase | Scope                                                                           | State                                                                     |
-| ----- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| 0     | Monorepo, CI, health check, web ↔ API proxy                                     | ✅ Built and verified locally. Hosting setup (Vercel/Render) still to do. |
-| 1     | Database schema, sign-up/sign-in with sessions, layered API                     | ✅ Done                                                                   |
-| 2     | Audits and evidence requests, CSV import                                        | ✅ Done                                                                   |
-| 3–8   | Owner magic links and secure uploads (S3), review, reminders, dashboard, export | Not started                                                               |
+| Phase | Scope                                                                        | State                                                                     |
+| ----- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 0     | Monorepo, CI, health check, web ↔ API proxy                                  | ✅ Built and verified locally. Hosting setup (Vercel/Render) still to do. |
+| 1     | Database schema, sign-up/sign-in with sessions, layered API                  | ✅ Done                                                                   |
+| 2     | Audits and evidence requests, CSV import                                     | ✅ Done                                                                   |
+| 3     | Owner magic links, secure S3 uploads, malware-scan check, Object Lock        | ✅ Done (GuardDuty and Resend need the AWS / Resend accounts to go live)  |
+| 4     | Review loop (accept / request changes / re-open), file preview, activity log | ✅ Done                                                                   |
+| 5–8   | Reminders, dashboard, export, hardening, submission                          | Not started                                                               |
 
 ## Who it's for
 
@@ -39,6 +41,17 @@ the dashboard always shows how ready you are for the auditor.
   every row is valid.
 - Readiness summary per audit: counts by status, overdue (computed, never stored) and % complete
 - Searchable, sortable, filterable requests table
+- **Send requests:** one email per owner listing all of their open requests, each with its own magic
+  link, plus a "Copy link" fallback that works without email
+- **Owner portal (no login):** a link opens exactly one request. Owners drag and drop files that upload
+  straight to S3 with a progress bar, and see "changes needed" comments and scan results.
+- **Secure upload pipeline** (PRD §8.4): S3 enforces each file's exact size and type at upload. The API
+  then checks the real file type from its contents (a renamed `.exe` is caught), computes its own
+  SHA-256, waits for the malware scan, and only then moves the file from `quarantine/` to
+  `evidence/` with a write-once Object Lock retention date.
+- **Review:** accept, request changes (with a comment the owner is emailed) or re-open; previews for
+  images and PDFs; full evidence history; append-only activity timeline. Optimistic locking means two
+  reviewers can never overwrite each other.
 
 ## Architecture
 
@@ -70,13 +83,15 @@ Requirements: Node 22+, pnpm 10+ (`corepack enable`), Docker.
 pnpm install
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
-docker compose up -d postgres         # Postgres on :5432 (also creates the test database)
+docker compose up -d                  # Postgres on :5432 and a local S3 server (RustFS) on :9000
+pnpm storage:setup                    # create the local bucket: Object Lock, CORS, lifecycle rule
 pnpm db:migrate                       # apply migrations
 pnpm db:seed                          # demo account and a sample SOC 2 audit
 pnpm dev                              # web on http://localhost:3000, API on http://localhost:4000
 ```
 
-Sign in with the demo login above, or create an account. A sample CSV for the import is linked from the
+Sign in with the demo login above, or create an account. Without a Resend key, emails are printed
+to the API log, so you can copy owners' magic links from there (or use "Copy link" on a request). A sample CSV for the import is linked from the
 import dialog (`apps/web/public/sample-requests.csv`).
 
 ## Tests
@@ -105,7 +120,16 @@ The full checklist is in [docs/phases.md](docs/phases.md) (Prerequisites and Pha
   the build needs (TypeScript bundler, Prisma CLI).
 - Start: `pnpm start`
 - Env: `NODE_ENV=production`, `DATABASE_URL` (Render's **internal** URL), `SESSION_SECRET`,
-  `WEB_ORIGIN` (your Vercel URL), `TRUST_PROXY=2` (check `req.ip` in the logs), `TZ=UTC`
+  `WEB_ORIGIN` (your Vercel URL), `TRUST_PROXY=2` (check `req.ip` in the logs), `TZ=UTC`,
+  `AWS_REGION`, `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (the least-privilege IAM user in
+  `infra/aws/api-policy.json`), `S3_BUCKET`, `MALWARE_SCAN_ENABLED=true`, `CRON_SECRET`, `RESEND_API_KEY`,
+  `EMAIL_FROM`. The API refuses to start in production if storage, cron or email isn't configured.
+
+**cron-job.org**
+
+- Every 5 minutes: `POST https://<api>.onrender.com/internal/cron/scan-check` with
+  `Authorization: Bearer <CRON_SECRET>`. It promotes scanned files, retries anything that failed half-way,
+  and keeps the free Render instance awake.
 
 **Vercel (web)**
 
@@ -114,7 +138,11 @@ The full checklist is in [docs/phases.md](docs/phases.md) (Prerequisites and Pha
 
 ## Known limitations (current phase)
 
-- Owner magic links, file uploads, review, reminders and export are not built yet (Phases 3–6).
+- Reminders, the dashboard charts and the evidence export are not built yet (Phases 5–6).
+- Malware scanning relies on Amazon GuardDuty, which only exists on AWS. Locally (and in tests) it's
+  switched off, and the tests simulate GuardDuty's tags.
+- Magic links are bearer tokens: anyone holding a link can upload to that one request. That risk is
+  limited by scoping, 30-day expiry, revocation, rate limits, scanning and manager review.
 - No password reset for managers.
 - One manager per audit. Teams and roles are on the roadmap.
 - Login and sign-up rate limits are kept in memory, which is correct for the single API instance but

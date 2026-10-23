@@ -1,6 +1,17 @@
-import type { EvidenceRequest, Prisma, PrismaClient } from '@prisma/client';
+import type { Audit, EvidenceRequest, Prisma, PrismaClient, RequestStatus } from '@prisma/client';
+import { ConflictError } from '../errors';
+import type { ActivityCreateData } from './activityRepository';
 
 export type RequestWithCounts = EvidenceRequest & { _count: { submissions: number } };
+export type RequestWithAudit = RequestWithCounts & { audit: Audit };
+
+/** Someone else changed the request since the caller loaded it (optimistic lock lost). */
+export function staleRequestError(): ConflictError {
+  return new ConflictError(
+    'This request was changed by someone else. Refresh to see the latest version.',
+    'STALE_VERSION',
+  );
+}
 
 const withSubmissionCount = { _count: { select: { submissions: true } } } as const;
 
@@ -28,6 +39,43 @@ export function createRequestRepository(prisma: PrismaClient) {
       return prisma.evidenceRequest.findFirst({
         where: { id, auditId },
         include: withSubmissionCount,
+      });
+    },
+
+    /** A request, but only if it belongs to one of this manager's audits (IDOR protection). */
+    findForManager(id: string, managerId: string): Promise<RequestWithAudit | null> {
+      return prisma.evidenceRequest.findFirst({
+        where: { id, audit: { ownerId: managerId } },
+        include: { audit: true, ...withSubmissionCount },
+      });
+    },
+
+    /**
+     * Changes a request's status and writes the matching activity entry in one transaction, with
+     * optimistic locking: the update only applies if the version is still the one the caller saw.
+     * If someone else changed the request in the meantime, nothing is written and the caller gets
+     * a 409, so two reviewers (or a reviewer and the scan job) can never overwrite each other.
+     */
+    transitionStatus(input: {
+      requestId: string;
+      expectedVersion: number;
+      toStatus: RequestStatus;
+      activity: Omit<ActivityCreateData, 'requestId' | 'toStatus'>;
+    }): Promise<RequestWithCounts> {
+      return prisma.$transaction(async (tx) => {
+        const updated = await tx.evidenceRequest.updateMany({
+          where: { id: input.requestId, version: input.expectedVersion },
+          data: { status: input.toStatus, version: { increment: 1 } },
+        });
+        if (updated.count === 0) throw staleRequestError();
+
+        await tx.activityLog.create({
+          data: { ...input.activity, requestId: input.requestId, toStatus: input.toStatus },
+        });
+        return tx.evidenceRequest.findUniqueOrThrow({
+          where: { id: input.requestId },
+          include: withSubmissionCount,
+        });
       });
     },
 

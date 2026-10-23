@@ -30,6 +30,17 @@ export function createRequestsRouter(requestService: RequestService): Router {
     res.status(201).json({ request });
   });
 
+  // Emails every owner who still owes evidence, one email each with all of their links.
+  router.post('/send', async (req, res) => {
+    res.json(await requestService.sendRequests(currentUserId(req), auditIdOf(req)));
+  });
+
+  // A fresh magic link for one request: the "Copy link" fallback that works without email.
+  router.post('/:requestId/link', async (req, res) => {
+    const { auditId, requestId } = ids(req);
+    res.status(201).json(await requestService.createLink(currentUserId(req), auditId, requestId));
+  });
+
   // The CSV is sent as raw `text/csv`, so its own (larger) body limit applies here only.
   router.post(
     '/import',

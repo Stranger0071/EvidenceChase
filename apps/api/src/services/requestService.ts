@@ -3,15 +3,20 @@ import {
   todayIsoDate,
   type CsvRowError,
   type EvidenceRequestDto,
+  type MagicLinkDto,
   type RequestData,
   type RequestUpdateData,
+  type SendRequestsResultDto,
 } from '@evidencechase/shared';
+import { OPEN_STATUSES } from '../domain/overdue';
 import { ConflictError, NotFoundError, ValidationError } from '../errors';
 import { isUniqueViolation } from '../lib/prisma';
 import type { Repositories } from '../repositories';
 import type { RequestCreateData, RequestWithCounts } from '../repositories/requestRepository';
 import { assertNotArchived, type AuditService, type Clock } from './auditService';
 import { fromIsoDate, toRequestDto } from './mappers';
+import type { NotificationService } from './notificationService';
+import type { TokenService } from './tokenService';
 
 const CSV_FIRST_DATA_ROW = 2;
 
@@ -29,6 +34,7 @@ function toCreateData(data: RequestData): RequestCreateData {
 export function createRequestService(
   { requests }: Repositories,
   auditService: AuditService,
+  links: { tokens: TokenService; notifications: NotificationService },
   clock: Clock = () => new Date(),
 ) {
   const toDto = (request: RequestWithCounts) => toRequestDto(request, todayIsoDate(clock()));
@@ -64,6 +70,34 @@ export function createRequestService(
       await auditService.getOwned(ownerId, auditId);
       const rows = await requests.listByAudit(auditId);
       return rows.map(toDto);
+    },
+
+    /**
+     * Emails every owner who still owes evidence: one email per owner, listing all of their open
+     * requests with a fresh link each. Archived audits send nothing (they're read-only).
+     */
+    async sendRequests(ownerId: string, auditId: string): Promise<SendRequestsResultDto> {
+      const audit = await getEditableAudit(ownerId, auditId);
+      const open = (await requests.listByAudit(auditId)).filter((request) =>
+        OPEN_STATUSES.includes(request.status),
+      );
+      if (open.length === 0) {
+        throw new ValidationError(
+          'Every request already has evidence submitted',
+          undefined,
+          'NOTHING_TO_SEND',
+        );
+      }
+      const result = await links.notifications.sendEvidenceRequests(audit.name, open);
+      return { ...result, requestsIncluded: open.length };
+    },
+
+    /** A fresh magic link for one request, for the "Copy link" button (works without email). */
+    async createLink(ownerId: string, auditId: string, requestId: string): Promise<MagicLinkDto> {
+      await getEditableAudit(ownerId, auditId);
+      await getRequest(auditId, requestId);
+      const { url, expiresAt } = await links.tokens.issue(requestId);
+      return { url, expiresAt: expiresAt.toISOString() };
     },
 
     async create(ownerId: string, auditId: string, data: RequestData): Promise<EvidenceRequestDto> {

@@ -1,7 +1,7 @@
 'use client';
 
 import { FRAMEWORK_LABELS, type EvidenceRequestDto } from '@evidencechase/shared';
-import { Archive, ArrowLeft, CalendarDays, FileUp, Pencil, Plus } from 'lucide-react';
+import { Archive, ArrowLeft, CalendarDays, FileUp, Pencil, Plus, Send } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useState } from 'react';
@@ -10,6 +10,7 @@ import { AuditFormDialog } from '@/components/audits/audit-form-dialog';
 import { AuditSummary } from '@/components/audits/audit-summary';
 import { CsvImportDialog } from '@/components/requests/csv-import-dialog';
 import { RequestFormDialog } from '@/components/requests/request-form-dialog';
+import { RequestReviewDialog } from '@/components/requests/request-review-dialog';
 import { RequestsTable } from '@/components/requests/requests-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/states';
 import { useArchiveAudit, useAudit } from '@/hooks/use-audits';
 import { useDeleteRequest, useRequests } from '@/hooks/use-requests';
+import { useCopyLink, useSendRequests } from '@/hooks/use-review';
 import { errorMessage } from '@/lib/api-client';
 import { formatDate } from '@/lib/utils';
 
@@ -27,6 +29,9 @@ type OpenDialog =
   | { kind: 'import' }
   | { kind: 'request'; request?: EvidenceRequestDto }
   | { kind: 'deleteRequest'; request: EvidenceRequestDto }
+  | { kind: 'send' }
+  /** By ID, so the dialog always shows the latest version of the request from the list. */
+  | { kind: 'review'; requestId: string }
   | null;
 
 export default function AuditDetailPage() {
@@ -35,8 +40,32 @@ export default function AuditDetailPage() {
   const requests = useRequests(auditId);
   const archiveAudit = useArchiveAudit(auditId);
   const deleteRequest = useDeleteRequest(auditId);
+  const sendRequests = useSendRequests(auditId);
+  const copyLink = useCopyLink(auditId);
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const closeDialog = () => setDialog(null);
+
+  const onReview = useCallback(
+    (request: EvidenceRequestDto) => setDialog({ kind: 'review', requestId: request.id }),
+    [],
+  );
+  const { mutate: issueLink } = copyLink;
+  const onCopyLink = useCallback(
+    (request: EvidenceRequestDto) =>
+      issueLink(request.id, {
+        onSuccess: async ({ url }) => {
+          try {
+            await navigator.clipboard.writeText(url);
+            toast.success(`Upload link for ${request.controlRef} copied. It works for 30 days.`);
+          } catch {
+            // Clipboard access can be blocked; show the link so it can be copied by hand.
+            toast.info(url, { duration: 30_000 });
+          }
+        },
+        onError: (error) => toast.error(errorMessage(error)),
+      }),
+    [issueLink],
+  );
 
   const onEdit = useCallback(
     (request: EvidenceRequestDto) => setDialog({ kind: 'request', request }),
@@ -83,6 +112,10 @@ export default function AuditDetailPage() {
 
         {!isArchived && (
           <div className="flex flex-wrap gap-2">
+            <Button onClick={() => setDialog({ kind: 'send' })}>
+              <Send className="h-4 w-4" aria-hidden />
+              Send requests
+            </Button>
             <Button variant="secondary" onClick={() => setDialog({ kind: 'editAudit' })}>
               <Pencil className="h-4 w-4" aria-hidden />
               Edit
@@ -137,6 +170,8 @@ export default function AuditDetailPage() {
           <RequestsTable
             requests={requests.data}
             readOnly={isArchived}
+            onReview={onReview}
+            onCopyLink={onCopyLink}
             onEdit={onEdit}
             onDelete={onDelete}
           />
@@ -158,6 +193,40 @@ export default function AuditDetailPage() {
         open={dialog?.kind === 'request'}
         onOpenChange={closeDialog}
         request={dialog?.kind === 'request' ? dialog.request : undefined}
+      />
+      <RequestReviewDialog
+        request={
+          dialog?.kind === 'review'
+            ? (requests.data?.find((request) => request.id === dialog.requestId) ?? null)
+            : null
+        }
+        readOnly={isArchived}
+        onOpenChange={closeDialog}
+      />
+      <ConfirmDialog
+        open={dialog?.kind === 'send'}
+        onOpenChange={closeDialog}
+        title="Send evidence requests?"
+        description="Every owner who still owes evidence gets one email listing all of their requests, each with its own secure upload link. Owners who already submitted are skipped."
+        confirmLabel="Send emails"
+        loading={sendRequests.isPending}
+        onConfirm={() =>
+          sendRequests.mutate(undefined, {
+            onSuccess: ({ emailsSent, requestsIncluded, failedRecipients }) => {
+              closeDialog();
+              toast.success(
+                `Sent ${emailsSent} email${emailsSent === 1 ? '' : 's'} covering ${requestsIncluded} request${requestsIncluded === 1 ? '' : 's'}`,
+              );
+              if (failedRecipients.length > 0) {
+                toast.error(
+                  `Couldn't email ${failedRecipients.join(', ')}. Use "Copy link" to send their links another way.`,
+                  { duration: 15_000 },
+                );
+              }
+            },
+            onError: (error) => toast.error(errorMessage(error)),
+          })
+        }
       />
       <ConfirmDialog
         open={dialog?.kind === 'archive'}

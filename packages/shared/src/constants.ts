@@ -32,14 +32,24 @@ export const STATUS_LABELS: Record<RequestStatus, string> = {
   ACCEPTED: 'Accepted',
 };
 
-/** Upload limits. Enforced in the browser, by the S3 upload policy and again by the API (Phase 3). */
+/** Upload limits. Enforced in the browser, by the S3 upload policy and again by the API. */
 export const FILE_LIMITS = {
   maxFileBytes: 25 * 1024 * 1024,
   maxFilesPerSubmission: 10,
 } as const;
 
+/** Types the manager can preview inline (in a sandboxed frame). Everything else downloads. */
+export const PREVIEWABLE_CONTENT_TYPES: readonly string[] = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+];
+
+/** Header that carries the owner's magic-link token to the API (never in the URL). */
+export const ACCESS_TOKEN_HEADER = 'x-access-token';
+
 /** Allowed evidence file types: extension → accepted MIME types. */
-export const ALLOWED_FILE_TYPES: Record<string, readonly string[]> = {
+export const ALLOWED_FILE_TYPES: Readonly<Record<string, readonly string[]>> = {
   pdf: ['application/pdf'],
   png: ['image/png'],
   jpg: ['image/jpeg'],

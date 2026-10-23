@@ -21,14 +21,14 @@ export class ValidationError extends DomainError {
 }
 
 export class UnauthorizedError extends DomainError {
-  constructor(message = 'Please sign in to continue') {
-    super(401, 'UNAUTHORIZED', message);
+  constructor(message = 'Please sign in to continue', code = 'UNAUTHORIZED') {
+    super(401, code, message);
   }
 }
 
 export class ForbiddenError extends DomainError {
-  constructor(message = 'You are not allowed to do that') {
-    super(403, 'FORBIDDEN', message);
+  constructor(message = 'You are not allowed to do that', code = 'FORBIDDEN') {
+    super(403, code, message);
   }
 }
 
