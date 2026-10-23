@@ -1,0 +1,9 @@
+[
+  {
+    "AllowedOrigins": ["https://evidencechase.vercel.app"],
+    "AllowedMethods": ["POST", "GET"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]

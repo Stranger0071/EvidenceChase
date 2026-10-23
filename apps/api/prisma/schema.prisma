@@ -1,0 +1,213 @@
+// EvidenceChase data model. See docs/PRD.md §7.
+// Every model exists from the start. Submission, EvidenceFile, AccessToken and ReminderLog are
+// used from Phase 3 on.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AuditFramework {
+  SOC2
+  ISO27001
+  HIPAA
+  PCI_DSS
+  GDPR
+  INTERNAL
+  OTHER
+}
+
+enum RequestStatus {
+  PENDING
+  SUBMITTED
+  CHANGES_REQUESTED
+  ACCEPTED
+}
+
+enum FileState {
+  PENDING_UPLOAD
+  AWAITING_SCAN
+  VERIFIED
+  REJECTED
+}
+
+/// Mirrors the values GuardDuty writes to the object's GuardDutyMalwareScanStatus tag.
+enum ScanStatus {
+  NOT_SCANNED
+  NO_THREATS_FOUND
+  THREATS_FOUND
+  UNSUPPORTED
+  FAILED
+}
+
+enum ReminderKind {
+  T_MINUS_7
+  T_MINUS_3
+  T_MINUS_1
+  DUE_TODAY
+  OVERDUE
+}
+
+enum ActorType {
+  MANAGER
+  OWNER
+  SYSTEM
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  audits Audit[]
+}
+
+model Audit {
+  id          String         @id @default(uuid()) @db.Uuid
+  ownerId     String         @db.Uuid
+  name        String
+  framework   AuditFramework
+  auditDate   DateTime?      @db.Date
+  remindersOn Boolean        @default(true)
+  archivedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  owner    User              @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  requests EvidenceRequest[]
+
+  @@index([ownerId, createdAt])
+}
+
+model EvidenceRequest {
+  id           String        @id @default(uuid()) @db.Uuid
+  auditId      String        @db.Uuid
+  controlRef   String
+  title        String
+  instructions String?
+  ownerName    String?
+  ownerEmail   String
+  dueDate      DateTime      @db.Date
+  status       RequestStatus @default(PENDING)
+  /// Incremented on every status change; used for optimistic locking.
+  version      Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  audit        Audit          @relation(fields: [auditId], references: [id], onDelete: Restrict)
+  submissions  Submission[]
+  files        EvidenceFile[]
+  accessTokens AccessToken[]
+  reminders    ReminderLog[]
+  activity     ActivityLog[]
+
+  @@unique([auditId, controlRef])
+  @@index([auditId, status])
+  @@index([status, dueDate])
+}
+
+model Submission {
+  id          String   @id @default(uuid()) @db.Uuid
+  requestId   String   @db.Uuid
+  note        String?
+  submittedAt DateTime @default(now())
+  isCurrent   Boolean  @default(true)
+
+  request EvidenceRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  files   EvidenceFile[]
+
+  @@index([requestId, submittedAt])
+}
+
+model EvidenceFile {
+  id           String     @id @default(uuid()) @db.Uuid
+  requestId    String     @db.Uuid
+  /// Null until the owner submits.
+  submissionId String?    @db.Uuid
+  state        FileState  @default(PENDING_UPLOAD)
+  scanStatus   ScanStatus @default(NOT_SCANNED)
+  storageKey   String     @unique
+  originalName String
+  declaredMime String
+  detectedMime String?
+  sizeBytes    Int
+  /// Hex SHA-256 computed by the server, never by the browser.
+  sha256       String?
+  /// S3 Object Lock retention date, set after promotion to evidence/.
+  retainUntil  DateTime?
+  rejectReason String?
+  createdAt    DateTime   @default(now())
+  verifiedAt   DateTime?
+
+  request    EvidenceRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  submission Submission?     @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+
+  @@index([state, createdAt])
+  @@index([submissionId])
+}
+
+model AccessToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  requestId  String    @db.Uuid
+  /// SHA-256 of the token. The token itself is never stored.
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  request EvidenceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+model ReminderLog {
+  id        String       @id @default(uuid()) @db.Uuid
+  requestId String       @db.Uuid
+  kind      ReminderKind
+  sentOn    DateTime     @db.Date
+  createdAt DateTime     @default(now())
+
+  request EvidenceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  /// One reminder of each kind per request per day: this constraint makes the job idempotent.
+  @@unique([requestId, kind, sentOn])
+}
+
+/// Append-only. The repository layer exposes no update or delete for this table.
+model ActivityLog {
+  id         String         @id @default(uuid()) @db.Uuid
+  requestId  String         @db.Uuid
+  actorType  ActorType
+  actorId    String?
+  actorEmail String?
+  action     String
+  fromStatus RequestStatus?
+  toStatus   RequestStatus?
+  comment    String?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime       @default(now())
+
+  request EvidenceRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+
+  @@index([requestId, createdAt])
+}
+
+/// Login sessions, in the exact shape connect-pg-simple expects. Managed by Prisma migrations
+/// so the schema has no unmanaged tables.
+model Session {
+  sid    String   @id @db.VarChar
+  sess   Json     @db.Json
+  expire DateTime @db.Timestamp(6)
+
+  @@index([expire], map: "IDX_session_expire")
+  @@map("session")
+}

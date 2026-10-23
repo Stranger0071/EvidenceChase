@@ -1,0 +1,6 @@
+controlRef,title,instructions,ownerName,ownerEmail,dueDate
+CC6.1,MFA enforcement screenshot,"Screenshot of the identity provider admin console showing MFA required for all users. The date must be visible.",Rahul Mehta,rahul.mehta@example.com,2026-11-05
+CC6.2,Quarterly user access review,Export of the Q3 access review with reviewer sign-off for production systems.,Rahul Mehta,rahul.mehta@example.com,2026-11-10
+CC6.3,Offboarding checklist samples,Completed offboarding checklists for three leavers from the audit period.,Ananya Iyer,ananya.iyer@example.com,2026-11-12
+CC7.2,Security incident log,"Export of all security incidents in the audit period, with severity and resolution.",Vikram Rao,vikram.rao@example.com,2026-11-15
+CC8.1,Change management approvals,Pull request approval records for 10 sampled production changes.,Vikram Rao,vikram.rao@example.com,2026-11-15

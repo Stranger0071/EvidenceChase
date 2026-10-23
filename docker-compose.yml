@@ -1,0 +1,47 @@
+# Local development services. Production uses Render PostgreSQL and AWS S3.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: evidencechase
+      POSTGRES_PASSWORD: evidencechase
+      POSTGRES_DB: evidencechase
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Creates the separate database used by integration tests.
+      - ./infra/local/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U evidencechase']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # S3-compatible object store, used locally instead of AWS S3 (from Phase 3 on).
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: evidencechase
+      MINIO_ROOT_PASSWORD: evidencechase-secret
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+
+  # One-off job that creates the local bucket (with Object Lock, to match production).
+  minio-setup:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 evidencechase evidencechase-secret; do sleep 1; done;
+      mc mb --ignore-existing --with-lock local/evidencechase-dev;
+      "
+
+volumes:
+  postgres-data:
+  minio-data:

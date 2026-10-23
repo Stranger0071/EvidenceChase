@@ -1,0 +1,17 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-quarantine",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "quarantine/" },
+      "Expiration": { "Days": 1 },
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 1 }
+    },
+    {
+      "ID": "remove-quarantine-delete-markers",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "quarantine/" },
+      "Expiration": { "ExpiredObjectDeleteMarker": true }
+    }
+  ]
+}

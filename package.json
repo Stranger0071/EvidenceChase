@@ -1,0 +1,30 @@
+{
+  "name": "evidencechase",
+  "private": true,
+  "description": "Audit evidence collection without the spreadsheet-and-email chaos.",
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @evidencechase/api --filter @evidencechase/web dev",
+    "build": "pnpm -r build",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:integration": "pnpm --filter @evidencechase/api test:integration",
+    "db:migrate": "pnpm --filter @evidencechase/api db:migrate",
+    "db:seed": "pnpm --filter @evidencechase/api db:seed"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "eslint": "^9.35.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^16.4.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.44.0"
+  }
+}

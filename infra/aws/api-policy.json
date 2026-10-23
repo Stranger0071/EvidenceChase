@@ -1,0 +1,17 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Quarantine",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:GetObjectTagging", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::evidencechase-prod/quarantine/*"
+    },
+    {
+      "Sid": "Evidence",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:PutObjectTagging", "s3:PutObjectRetention"],
+      "Resource": "arn:aws:s3:::evidencechase-prod/evidence/*"
+    }
+  ]
+}
