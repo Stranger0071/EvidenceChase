@@ -186,3 +186,60 @@ export function evidenceSubmittedEmail(input: {
     html,
   };
 }
+
+export interface ReminderItem extends RequestLink {
+  auditName: string;
+  /** "Due in 3 days", "Overdue by 6 days" … */
+  dueLabel: string;
+  overdue: boolean;
+  changesRequested: boolean;
+}
+
+/**
+ * The daily reminder digest (PRD §8.6): one email per owner, covering every request that's due a
+ * reminder today, overdue ones first.
+ */
+export function reminderDigestEmail(input: {
+  to: string;
+  ownerName: string | null;
+  items: ReminderItem[];
+}): EmailMessage {
+  const greeting = input.ownerName ?? 'there';
+  const items = [...input.items].sort((a, b) => Number(b.overdue) - Number(a.overdue));
+  const overdueCount = items.filter((item) => item.overdue).length;
+  const subject =
+    overdueCount > 0
+      ? `Overdue: evidence for ${overdueCount} request${overdueCount === 1 ? '' : 's'}`
+      : `Reminder: evidence due soon (${items.length} request${items.length === 1 ? '' : 's'})`;
+
+  const text = [
+    `Hi ${greeting},`,
+    '',
+    'A reminder that your compliance team is still waiting for this evidence:',
+    '',
+    ...items.flatMap((item) => [
+      `• ${item.controlRef}: ${item.title} (${item.auditName}): ${item.dueLabel}${item.changesRequested ? ', changes requested' : ''}`,
+      `  ${item.url}`,
+      '',
+    ]),
+    'Already sent it? You can ignore this. Reminders stop as soon as evidence is submitted.',
+  ].join('\n');
+
+  const rows = items
+    .map(
+      (item) =>
+        `<li style="margin-bottom:12px"><strong>${escapeHtml(item.controlRef)}</strong>: ${escapeHtml(item.title)} <span style="color:#6b6b66">(${escapeHtml(item.auditName)})</span><br/><span style="color:${item.overdue ? '#c62828' : '#6b6b66'}">${escapeHtml(item.dueLabel)} · ${formatDueDate(item.dueDate)}${item.changesRequested ? ' · changes requested' : ''}</span><br/>${button(item.url, 'Upload evidence')}</li>`,
+    )
+    .join('\n');
+
+  const html = layout(
+    [
+      `<p>Hi ${escapeHtml(greeting)},</p>`,
+      '<p>A reminder that your compliance team is still waiting for this evidence:</p>',
+      `<ul style="padding-left:18px">${rows}</ul>`,
+      '<p style="color:#6b6b66">Already sent it? You can ignore this. Reminders stop as soon as evidence is submitted.</p>',
+    ].join('\n'),
+  );
+
+  return { to: input.to, subject, text, html };
+}

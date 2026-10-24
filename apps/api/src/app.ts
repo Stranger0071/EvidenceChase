@@ -16,6 +16,7 @@ import type { StoragePort } from './ports/storage';
 import { createRepositories } from './repositories';
 import { createAuditsRouter } from './routes/audits';
 import { createAuthRouter } from './routes/auth';
+import { createExportsRouter } from './routes/exports';
 import { createHealthRouter } from './routes/health';
 import { createInternalRouter } from './routes/internal';
 import { createOwnerRouter } from './routes/owner';
@@ -25,6 +26,8 @@ import { createAuditService, type Clock } from './services/auditService';
 import { createAuthService } from './services/authService';
 import { createNotificationService } from './services/notificationService';
 import { createOwnerService } from './services/ownerService';
+import { createExportService } from './services/exportService';
+import { createReminderService } from './services/reminderService';
 import { createRequestService } from './services/requestService';
 import { createReviewService } from './services/reviewService';
 import { createScanService } from './services/scanService';
@@ -91,6 +94,8 @@ export function createApp(deps: AppDeps): Express {
     notifications,
     clock,
   );
+  const reminderService = createReminderService(repositories, notifications, logger, clock);
+  const exportService = createExportService(repositories, storage, env, logger, clock);
 
   const app = express();
   app.set('trust proxy', env.TRUST_PROXY);
@@ -112,12 +117,14 @@ export function createApp(deps: AppDeps): Express {
   app.use(express.json({ limit: '100kb' }));
 
   // These routes don't use the session cookie, so they come before sessions and the origin check:
-  // Render's health check, cron-job.org (bearer secret) and owners (magic-link token header).
+  // Render's health check, cron-job.org (bearer secret), signed export downloads and owners
+  // (magic-link token header).
   app.use(createHealthRouter(prisma, logger));
   app.use(
     '/internal/cron',
-    createInternalRouter({ scanService, cronSecret: env.CRON_SECRET, logger }),
+    createInternalRouter({ scanService, reminderService, cronSecret: env.CRON_SECRET, logger }),
   );
+  app.use('/exports', createExportsRouter(exportService, rateLimits.exports));
   app.use('/e', createOwnerRouter({ ownerService, tokenService, rateLimit: rateLimits.owner }));
 
   app.use(
@@ -131,8 +138,8 @@ export function createApp(deps: AppDeps): Express {
   app.use(originCheck(env.WEB_ORIGIN));
 
   app.use('/auth', createAuthRouter({ authService, rateLimits, secureCookies: isProduction }));
-  app.use('/audits', createAuditsRouter(auditService));
-  app.use('/audits/:auditId/requests', createRequestsRouter(requestService));
+  app.use('/audits', createAuditsRouter(auditService, exportService));
+  app.use('/audits/:auditId/requests', createRequestsRouter(requestService, reminderService));
   app.use('/requests', createReviewRouter(reviewService));
   app.use('/files', createFilesRouter(reviewService));
 

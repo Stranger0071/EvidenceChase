@@ -23,6 +23,14 @@ export function createAuditRepository(prisma: PrismaClient) {
       });
     },
 
+    /**
+     * By ID alone, with no ownership check. Only for callers that authorized the request another
+     * way (the signed export link). Everything a manager does goes through findOwned.
+     */
+    findById(id: string): Promise<Audit | null> {
+      return prisma.audit.findUnique({ where: { id } });
+    },
+
     findOwned(id: string, ownerId: string): Promise<Audit | null> {
       return prisma.audit.findFirst({ where: { id, ownerId } });
     },
@@ -68,6 +76,51 @@ export function createAuditRepository(prisma: PrismaClient) {
       return new Map(
         auditIds.map((id) => [id, buildAuditSummary(counts.get(id) ?? {}, overdue.get(id) ?? 0)]),
       );
+    },
+
+    /**
+     * The figures behind the audit dashboard: per-owner status counts, per-owner overdue counts,
+     * the most overdue requests, and how many submitted files are still being scanned. Overdue is
+     * computed in SQL from the due date, exactly as on the summary, so the numbers always agree.
+     */
+    async dashboardFigures(auditId: string, today: Date) {
+      const overdueWhere = { auditId, status: { in: [...OPEN_STATUSES] }, dueDate: { lt: today } };
+      const [byOwnerAndStatus, overdueByOwner, owners, overdue, filesScanning] = await Promise.all([
+        prisma.evidenceRequest.groupBy({
+          by: ['ownerEmail', 'status'],
+          where: { auditId },
+          _count: { _all: true },
+        }),
+        prisma.evidenceRequest.groupBy({
+          by: ['ownerEmail'],
+          where: overdueWhere,
+          _count: { _all: true },
+        }),
+        prisma.evidenceRequest.findMany({
+          where: { auditId, ownerName: { not: null } },
+          select: { ownerEmail: true, ownerName: true },
+          distinct: ['ownerEmail'],
+        }),
+        prisma.evidenceRequest.findMany({
+          where: overdueWhere,
+          orderBy: [{ dueDate: 'asc' }, { controlRef: 'asc' }],
+          take: 10,
+        }),
+        prisma.evidenceFile.count({ where: { state: 'AWAITING_SCAN', request: { auditId } } }),
+      ]);
+      return {
+        byOwnerAndStatus: byOwnerAndStatus.map((group) => ({
+          ownerEmail: group.ownerEmail,
+          status: group.status as RequestStatus,
+          count: group._count._all,
+        })),
+        overdueByOwner: new Map(
+          overdueByOwner.map((group) => [group.ownerEmail, group._count._all]),
+        ),
+        ownerNames: new Map(owners.map((owner) => [owner.ownerEmail, owner.ownerName])),
+        overdue,
+        filesScanning,
+      };
     },
   };
 }

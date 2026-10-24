@@ -1,10 +1,14 @@
-import { auditInputSchema, auditUpdateSchema } from '@evidencechase/shared';
+import { auditInputSchema, auditUpdateSchema, exportLinkSchema } from '@evidencechase/shared';
 import { Router } from 'express';
 import { parseId, parseInput } from '../lib/validate';
 import { currentUserId, requireManager } from '../middleware/auth';
 import type { AuditService } from '../services/auditService';
+import type { ExportService } from '../services/exportService';
 
-export function createAuditsRouter(auditService: AuditService): Router {
+export function createAuditsRouter(
+  auditService: AuditService,
+  exportService: ExportService,
+): Router {
   const router = Router();
   router.use(requireManager);
 
@@ -22,6 +26,25 @@ export function createAuditsRouter(auditService: AuditService): Router {
   router.get('/:auditId', async (req, res) => {
     const audit = await auditService.get(currentUserId(req), parseId(req.params.auditId, 'Audit'));
     res.json({ audit });
+  });
+
+  // A 60-second signed link that downloads the evidence pack straight from the API.
+  router.post('/:auditId/export-link', async (req, res) => {
+    const { scope } = parseInput(exportLinkSchema, req.body ?? {});
+    const link = await exportService.createLink(
+      currentUserId(req),
+      parseId(req.params.auditId, 'Audit'),
+      scope,
+    );
+    res.status(201).json(link);
+  });
+
+  router.get('/:auditId/dashboard', async (req, res) => {
+    const dashboard = await auditService.dashboard(
+      currentUserId(req),
+      parseId(req.params.auditId, 'Audit'),
+    );
+    res.json({ dashboard });
   });
 
   router.patch('/:auditId', async (req, res) => {

@@ -21,7 +21,9 @@ the dashboard always shows how ready you are for the auditor.
 | 2     | Audits and evidence requests, CSV import                                     | ✅ Done                                                                   |
 | 3     | Owner magic links, secure S3 uploads, malware-scan check, Object Lock        | ✅ Done (GuardDuty and Resend need the AWS / Resend accounts to go live)  |
 | 4     | Review loop (accept / request changes / re-open), file preview, activity log | ✅ Done                                                                   |
-| 5–8   | Reminders, dashboard, export, hardening, submission                          | Not started                                                               |
+| 5     | Automatic reminder digests, "Nudge now"                                      | ✅ Done                                                                   |
+| 6     | Readiness dashboard, streamed evidence-pack ZIP export with hash check       | ✅ Done                                                                   |
+| 7–8   | Hardening, end-to-end tests, submission                                      | Not started                                                               |
 
 ## Who it's for
 
@@ -52,6 +54,17 @@ the dashboard always shows how ready you are for the auditor.
 - **Review:** accept, request changes (with a comment the owner is emailed) or re-open; previews for
   images and PDFs; full evidence history; append-only activity timeline. Optimistic locking means two
   reviewers can never overwrite each other.
+- **Automatic reminders:** a daily job emails each owner one digest of everything due a reminder: 7, 3
+  and 1 days before, on the day, and every 3 days once overdue. Reminders stop as soon as evidence is
+  in. Each reminder is claimed in the database before it's sent, so a re-run or an overlapping run
+  never sends twice. A failed email is retried the next day. "Nudge now" sends one immediately, within
+  the same one-email-per-owner-per-day cap.
+- **Readiness dashboard:** % accepted, a status breakdown, progress per owner (who to chase first),
+  the most overdue requests, and files still being scanned. Every chart has a table view.
+- **Evidence pack export:** a ZIP with one folder per control, streamed straight from S3 (constant
+  memory). Every file is re-hashed while it's added, and `index.csv` records both fingerprints with an
+  OK / MISMATCH / MISSING verdict, plus who accepted it and when. Spreadsheet formulas typed into
+  titles are defused. The download link is HMAC-signed, scoped to one audit and valid for 60 seconds.
 
 ## Architecture
 
@@ -85,7 +98,7 @@ cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
 docker compose up -d                  # Postgres on :5432 and a local S3 server (RustFS) on :9000
 pnpm storage:setup                    # create the local bucket: Object Lock, CORS, lifecycle rule
-pnpm db:migrate                       # apply migrations
+pnpm db:migrate                       # apply migrations (re-run after pulling new ones)
 pnpm db:seed                          # demo account and a sample SOC 2 audit
 pnpm dev                              # web on http://localhost:3000, API on http://localhost:4000
 ```
@@ -123,13 +136,16 @@ The full checklist is in [docs/phases.md](docs/phases.md) (Prerequisites and Pha
   `WEB_ORIGIN` (your Vercel URL), `TRUST_PROXY=2` (check `req.ip` in the logs), `TZ=UTC`,
   `AWS_REGION`, `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (the least-privilege IAM user in
   `infra/aws/api-policy.json`), `S3_BUCKET`, `MALWARE_SCAN_ENABLED=true`, `CRON_SECRET`, `RESEND_API_KEY`,
-  `EMAIL_FROM`. The API refuses to start in production if storage, cron or email isn't configured.
+  `EMAIL_FROM`, `API_PUBLIC_URL` (this API's public URL, for export downloads), `EXPORT_SIGNING_SECRET`.
+  The API refuses to start in production if storage, cron, export signing or email isn't configured.
 
 **cron-job.org**
 
 - Every 5 minutes: `POST https://<api>.onrender.com/internal/cron/scan-check` with
   `Authorization: Bearer <CRON_SECRET>`. It promotes scanned files, retries anything that failed half-way,
   and keeps the free Render instance awake.
+- Daily at 03:30 UTC (09:00 IST): `POST https://<api>.onrender.com/internal/cron/reminders` with the same
+  header. Safe to run more than once a day.
 
 **Vercel (web)**
 
@@ -138,7 +154,12 @@ The full checklist is in [docs/phases.md](docs/phases.md) (Prerequisites and Pha
 
 ## Known limitations (current phase)
 
-- Reminders, the dashboard charts and the evidence export are not built yet (Phases 5–6).
+- If the reminder job misses a day (for example the scheduler is down), that day's reminders are skipped
+  rather than sent late; the next scheduled reminder still goes out. Overdue requests keep being chased
+  every 3 days.
+- Export downloads go straight to the API and stream for as long as the audit needs; very large audits
+  would be better served by a background job that emails a link (on the roadmap).
+- No dark mode yet.
 - Malware scanning relies on Amazon GuardDuty, which only exists on AWS. Locally (and in tests) it's
   switched off, and the tests simulate GuardDuty's tags.
 - Magic links are bearer tokens: anyone holding a link can upload to that one request. That risk is

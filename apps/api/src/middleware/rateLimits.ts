@@ -29,6 +29,7 @@ export function createRateLimits() {
     ),
     // Public magic-link routes: stops token guessing and upload-link spam (PRD §9.4).
     owner: limiter(60_000, 30, 'Too many requests. Wait a minute and try again.'),
+    exports: limiter(60_000, 10, 'Too many downloads. Wait a minute and try again.'),
   };
 }
 

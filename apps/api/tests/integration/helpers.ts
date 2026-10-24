@@ -11,6 +11,7 @@ import { testDatabaseUrl } from './testDatabase';
 
 export const WEB_ORIGIN = 'http://localhost:3000';
 export const CRON_SECRET = 'test-cron-secret-that-is-at-least-32-characters';
+export const EXPORT_SIGNING_SECRET = 'test-export-signing-secret-at-least-32-chars';
 
 export class FakeMailer implements MailerPort {
   readonly sent: EmailMessage[] = [];
@@ -42,6 +43,8 @@ export function createTestContext(overrides: Partial<Env> = {}) {
     WEB_ORIGIN,
     TRUST_PROXY: 0,
     CRON_SECRET,
+    API_PUBLIC_URL: 'http://api.test',
+    EXPORT_SIGNING_SECRET,
     AWS_REGION: 'ap-southeast-1',
     S3_BUCKET: 'test-bucket',
     MALWARE_SCAN_ENABLED: false,
@@ -53,8 +56,10 @@ export function createTestContext(overrides: Partial<Env> = {}) {
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 2 });
   const mailer = new FakeMailer();
   const storage = new MemoryStorageAdapter();
-  const makeApp = (): Express =>
+  /** `clock` pins "now", for date-dependent behaviour such as reminders. */
+  const makeApp = (options: { clock?: () => Date } = {}): Express =>
     createApp({
+      clock: options.clock,
       env,
       prisma,
       pool,

@@ -50,6 +50,8 @@ enum ReminderKind {
   T_MINUS_1
   DUE_TODAY
   OVERDUE
+  /// Sent by the manager with "Nudge now"; counts towards the one-email-per-owner-per-day cap.
+  NUDGE
 }
 
 enum ActorType {

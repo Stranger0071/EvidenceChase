@@ -1,10 +1,14 @@
 import {
   todayIsoDate,
+  toIsoDate,
+  type AuditDashboardDto,
   type AuditData,
   type AuditDto,
   type AuditUpdateData,
 } from '@evidencechase/shared';
 import type { Audit } from '@prisma/client';
+import { daysBetween } from '../domain/reminderSchedule';
+import { buildOwnerProgress } from '../domain/summary';
 import { ConflictError, NotFoundError } from '../errors';
 import type { Repositories } from '../repositories';
 import { fromIsoDate, toAuditDto } from './mappers';
@@ -73,6 +77,39 @@ export function createAuditService({ audits }: Repositories, clock: Clock = () =
         ...(auditDate !== undefined && { auditDate: auditDate ? fromIsoDate(auditDate) : null }),
       });
       return toDto(audit);
+    },
+
+    async dashboard(ownerId: string, auditId: string): Promise<AuditDashboardDto> {
+      const audit = await getOwned(ownerId, auditId);
+      const todayIso = todayIsoDate(clock());
+      const today = fromIsoDate(todayIso);
+      const [summaries, figures] = await Promise.all([
+        audits.summaries([audit.id], today),
+        audits.dashboardFigures(audit.id, today),
+      ]);
+
+      return {
+        summary: summaries.get(audit.id)!,
+        filesScanning: figures.filesScanning,
+        owners: buildOwnerProgress(
+          figures.byOwnerAndStatus,
+          figures.overdueByOwner,
+          figures.ownerNames,
+        ),
+        overdue: figures.overdue.map((request) => {
+          const dueDate = toIsoDate(request.dueDate);
+          return {
+            id: request.id,
+            controlRef: request.controlRef,
+            title: request.title,
+            ownerEmail: request.ownerEmail,
+            ownerName: request.ownerName,
+            dueDate,
+            daysOverdue: daysBetween(dueDate, todayIso),
+            status: request.status,
+          };
+        }),
+      };
     },
 
     /** Archiving is idempotent: archiving an archived audit returns it unchanged. */

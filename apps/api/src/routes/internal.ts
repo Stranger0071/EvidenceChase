@@ -1,6 +1,7 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import type { Logger } from '../lib/logger';
 import { requireCronSecret } from '../middleware/cronAuth';
+import type { ReminderService } from '../services/reminderService';
 import type { ScanService } from '../services/scanService';
 
 /**
@@ -11,34 +12,44 @@ import type { ScanService } from '../services/scanService';
  */
 export function createInternalRouter(deps: {
   scanService: ScanService;
+  reminderService: ReminderService;
   cronSecret?: string;
   logger: Logger;
 }): Router {
-  const { scanService, logger } = deps;
+  const { logger } = deps;
   const router = Router();
   router.use(requireCronSecret(deps.cronSecret));
 
-  let scanRunning = false;
+  function backgroundJob(name: string, run: () => Promise<object>): RequestHandler {
+    let running = false;
+    return (_req, res) => {
+      if (running) {
+        res.status(202).json({ started: false, reason: 'already running' });
+        return;
+      }
+      running = true;
+      res.status(202).json({ started: true });
+
+      run()
+        .then((summary) => logger.info({ job: name, ...summary }, `Job ${name} finished`))
+        .catch((error: unknown) => logger.error({ err: error, job: name }, `Job ${name} failed`))
+        .finally(() => {
+          running = false;
+        });
+    };
+  }
 
   /** Every 5 minutes: promotes or rejects scanned files. The call also keeps the free instance awake. */
-  router.post('/scan-check', (_req, res) => {
-    if (scanRunning) {
-      res.status(202).json({ started: false, reason: 'already running' });
-      return;
-    }
-    scanRunning = true;
-    res.status(202).json({ started: true });
+  router.post(
+    '/scan-check',
+    backgroundJob('scan-check', () => deps.scanService.runPending()),
+  );
 
-    scanService
-      .runPending()
-      .then((summary) => logger.info({ job: 'scan-check', ...summary }, 'Scan check finished'))
-      .catch((error: unknown) =>
-        logger.error({ err: error, job: 'scan-check' }, 'Scan check failed'),
-      )
-      .finally(() => {
-        scanRunning = false;
-      });
-  });
+  /** Daily at 09:00 IST: emails each owner one digest of the reminders due today. */
+  router.post(
+    '/reminders',
+    backgroundJob('reminders', () => deps.reminderService.run()),
+  );
 
   return router;
 }

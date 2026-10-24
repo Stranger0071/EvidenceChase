@@ -5,6 +5,7 @@ export * from './files';
 export * from './schemas/audit';
 export * from './schemas/auth';
 export * from './schemas/common';
+export * from './schemas/export';
 export * from './schemas/request';
 export * from './schemas/upload';
 export * from './types';

@@ -3,10 +3,14 @@ import express, { Router, type Request } from 'express';
 import { ValidationError } from '../errors';
 import { parseId, parseInput } from '../lib/validate';
 import { currentUserId, requireManager } from '../middleware/auth';
+import type { ReminderService } from '../services/reminderService';
 import type { RequestService } from '../services/requestService';
 
 /** Evidence requests, nested under their audit: /audits/:auditId/requests. */
-export function createRequestsRouter(requestService: RequestService): Router {
+export function createRequestsRouter(
+  requestService: RequestService,
+  reminderService: ReminderService,
+): Router {
   const router = Router({ mergeParams: true });
   router.use(requireManager);
 
@@ -39,6 +43,13 @@ export function createRequestsRouter(requestService: RequestService): Router {
   router.post('/:requestId/link', async (req, res) => {
     const { auditId, requestId } = ids(req);
     res.status(201).json(await requestService.createLink(currentUserId(req), auditId, requestId));
+  });
+
+  // "Nudge now": an immediate reminder, within the one-email-per-owner-per-day cap.
+  router.post('/:requestId/nudge', async (req, res) => {
+    const { auditId, requestId } = ids(req);
+    await reminderService.nudge(currentUserId(req), auditId, requestId);
+    res.status(204).end();
   });
 
   // The CSV is sent as raw `text/csv`, so its own (larger) body limit applies here only.

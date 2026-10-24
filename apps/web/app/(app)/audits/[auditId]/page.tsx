@@ -1,13 +1,23 @@
 'use client';
 
 import { FRAMEWORK_LABELS, type EvidenceRequestDto } from '@evidencechase/shared';
-import { Archive, ArrowLeft, CalendarDays, FileUp, Pencil, Plus, Send } from 'lucide-react';
+import {
+  Archive,
+  ArrowLeft,
+  CalendarDays,
+  Download,
+  FileUp,
+  Pencil,
+  Plus,
+  Send,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { AuditFormDialog } from '@/components/audits/audit-form-dialog';
-import { AuditSummary } from '@/components/audits/audit-summary';
+import { ExportDialog } from '@/components/audits/export-dialog';
+import { AuditDashboard } from '@/components/dashboard/audit-dashboard';
 import { CsvImportDialog } from '@/components/requests/csv-import-dialog';
 import { RequestFormDialog } from '@/components/requests/request-form-dialog';
 import { RequestReviewDialog } from '@/components/requests/request-review-dialog';
@@ -30,6 +40,7 @@ type OpenDialog =
   | { kind: 'request'; request?: EvidenceRequestDto }
   | { kind: 'deleteRequest'; request: EvidenceRequestDto }
   | { kind: 'send' }
+  | { kind: 'export' }
   /** By ID, so the dialog always shows the latest version of the request from the list. */
   | { kind: 'review'; requestId: string }
   | null;
@@ -110,25 +121,37 @@ export default function AuditDetailPage() {
           </p>
         </div>
 
-        {!isArchived && (
-          <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
+          {!isArchived && (
             <Button onClick={() => setDialog({ kind: 'send' })}>
               <Send className="h-4 w-4" aria-hidden />
               Send requests
             </Button>
-            <Button variant="secondary" onClick={() => setDialog({ kind: 'editAudit' })}>
-              <Pencil className="h-4 w-4" aria-hidden />
-              Edit
-            </Button>
-            <Button variant="secondary" onClick={() => setDialog({ kind: 'archive' })}>
-              <Archive className="h-4 w-4" aria-hidden />
-              Archive
-            </Button>
-          </div>
-        )}
+          )}
+          {/* Export stays available once archived: that's when the pack is handed over. */}
+          <Button variant="secondary" onClick={() => setDialog({ kind: 'export' })}>
+            <Download className="h-4 w-4" aria-hidden />
+            Export
+          </Button>
+          {!isArchived && (
+            <>
+              <Button variant="secondary" onClick={() => setDialog({ kind: 'editAudit' })}>
+                <Pencil className="h-4 w-4" aria-hidden />
+                Edit
+              </Button>
+              <Button variant="secondary" onClick={() => setDialog({ kind: 'archive' })}>
+                <Archive className="h-4 w-4" aria-hidden />
+                Archive
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
-      <AuditSummary summary={audit.data.summary} />
+      <AuditDashboard
+        auditId={auditId}
+        onOpenRequest={(requestId) => setDialog({ kind: 'review', requestId })}
+      />
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -194,6 +217,7 @@ export default function AuditDetailPage() {
         onOpenChange={closeDialog}
         request={dialog?.kind === 'request' ? dialog.request : undefined}
       />
+      <ExportDialog auditId={auditId} open={dialog?.kind === 'export'} onOpenChange={closeDialog} />
       <RequestReviewDialog
         request={
           dialog?.kind === 'review'

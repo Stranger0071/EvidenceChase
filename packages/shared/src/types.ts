@@ -158,3 +158,44 @@ export interface SendRequestsResultDto {
   /** Owners whose email couldn't be sent. Their links still work via "Copy link". */
   failedRecipients: string[];
 }
+
+/** Progress for one control owner within an audit. */
+export interface OwnerProgressDto {
+  ownerEmail: string;
+  ownerName: string | null;
+  total: number;
+  accepted: number;
+  /** Submitted and waiting for the manager's review. */
+  inReview: number;
+  /** Still owed by the owner: pending or changes requested. */
+  waiting: number;
+  overdue: number;
+}
+
+export interface OverdueRequestDto {
+  id: string;
+  controlRef: string;
+  title: string;
+  ownerEmail: string;
+  ownerName: string | null;
+  dueDate: string;
+  daysOverdue: number;
+  status: RequestStatus;
+}
+
+/** "Are we ready for the auditor?" (Phase 6). */
+export interface AuditDashboardDto {
+  summary: AuditSummary;
+  /** Files submitted but still waiting for the malware scan. */
+  filesScanning: number;
+  /** Owners with the most outstanding work first. */
+  owners: OwnerProgressDto[];
+  /** Most overdue first, at most 10. */
+  overdue: OverdueRequestDto[];
+}
+
+export interface ExportLinkDto {
+  /** Goes straight to the API (not through the web app's proxy), signed and valid for 60 seconds. */
+  url: string;
+  expiresAt: string;
+}

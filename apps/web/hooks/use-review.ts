@@ -73,3 +73,14 @@ export function useCopyLink(auditId: string) {
       api.post<MagicLinkDto>(`/audits/${auditId}/requests/${requestId}/link`),
   });
 }
+
+/** "Nudge now": an immediate reminder, at most one reminder email per owner per day. */
+export function useNudge(auditId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (requestId: string) =>
+      api.post<void>(`/audits/${auditId}/requests/${requestId}/nudge`),
+    onSuccess: (_data, requestId) =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.timeline(requestId) }),
+  });
+}

@@ -18,6 +18,17 @@ const envSchema = z.object({
   /** Number of proxies in front of the API. See .env.example. */
   TRUST_PROXY: z.coerce.number().int().min(0).default(0),
 
+  /** Public URL of this API. Export downloads go straight here, not through the web app's proxy. */
+  API_PUBLIC_URL: z
+    .string()
+    .url('API_PUBLIC_URL must be the full URL of this API')
+    .default('http://localhost:4000'),
+  /** Signs the short-lived evidence export links (HMAC). Exports are off without it. */
+  EXPORT_SIGNING_SECRET: z
+    .string()
+    .min(32, 'EXPORT_SIGNING_SECRET must be at least 32 characters')
+    .optional(),
+
   /** Bearer secret that cron-job.org sends to /internal/cron/*. Those routes are off without it. */
   CRON_SECRET: z.string().min(32, 'CRON_SECRET must be at least 32 characters').optional(),
 
@@ -52,10 +63,19 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const env = result.data;
   if (env.NODE_ENV === 'production') {
     const missing = (
-      ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'CRON_SECRET', 'RESEND_API_KEY'] as const
+      [
+        'AWS_ACCESS_KEY_ID',
+        'AWS_SECRET_ACCESS_KEY',
+        'CRON_SECRET',
+        'EXPORT_SIGNING_SECRET',
+        'RESEND_API_KEY',
+      ] as const
     ).filter((name) => !env[name]);
     if (missing.length > 0) {
       throw new Error(`Missing production configuration: ${missing.join(', ')}`);
+    }
+    if (new URL(env.API_PUBLIC_URL).hostname === 'localhost') {
+      throw new Error('API_PUBLIC_URL must be the public URL of the API in production');
     }
   }
   return env;

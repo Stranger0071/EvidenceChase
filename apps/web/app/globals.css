@@ -23,6 +23,14 @@
   --color-info-soft: #e9edff;
   --color-neutral-soft: #efefeb;
 
+  /* Chart marks (validated with the dataviz palette checker against #ffffff). Request states use
+     status colours: accepted = good, changes requested = warning. Marks only: text never wears these. */
+  --color-chart-accepted: #0ca30c;
+  --color-chart-review: #2a78d6;
+  --color-chart-changes: #fab219;
+  --color-chart-waiting: #9c9b93;
+  --color-chart-track: #efefeb;
+
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --radius-card: 0.75rem;
 }

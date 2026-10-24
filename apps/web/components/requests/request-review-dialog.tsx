@@ -1,7 +1,7 @@
 'use client';
 
 import type { ActivityLogDto, EvidenceFileDto, EvidenceRequestDto } from '@evidencechase/shared';
-import { Check, Download, Eye, RotateCcw, Undo2 } from 'lucide-react';
+import { BellRing, Check, Download, Eye, RotateCcw, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { SubmissionFiles } from '@/components/evidence/submission-files';
@@ -10,7 +10,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Textarea } from '@/components/ui/input';
 import { ErrorState, LoadingState } from '@/components/ui/states';
-import { useFileUrl, useReview, useSubmissions, useTimeline } from '@/hooks/use-review';
+import { useFileUrl, useNudge, useReview, useSubmissions, useTimeline } from '@/hooks/use-review';
 import { errorMessage } from '@/lib/api-client';
 import { formatDate } from '@/lib/utils';
 import { StatusBadge } from './status-badge';
@@ -24,6 +24,8 @@ const ACTION_LABELS: Record<string, string> = {
   FILE_REJECTED: 'rejected a file',
   DOWNLOADED: 'downloaded',
   PREVIEWED: 'previewed',
+  REMINDER_SENT: 'sent a reminder',
+  NUDGED: 'sent a reminder (nudge)',
 };
 
 function TimelineEntry({ entry }: { entry: ActivityLogDto }) {
@@ -72,6 +74,8 @@ function ReviewBody({ request, readOnly }: { request: EvidenceRequestDto; readOn
   const timeline = useTimeline(request.id);
   const review = useReview(request.id);
   const fileUrl = useFileUrl();
+  const nudge = useNudge(request.auditId);
+  const waitingOnOwner = request.status === 'PENDING' || request.status === 'CHANGES_REQUESTED';
   const [mode, setMode] = useState<'changes' | 'reopen' | null>(null);
   const [comment, setComment] = useState('');
   const [preview, setPreview] = useState<{ url: string; name: string } | null>(null);
@@ -189,6 +193,28 @@ function ReviewBody({ request, readOnly }: { request: EvidenceRequestDto; readOn
           </figure>
         )}
       </section>
+
+      {!readOnly && waitingOnOwner && (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-border bg-background p-4">
+          <p className="text-sm text-muted">
+            Waiting on {request.ownerName ?? request.ownerEmail}. Reminders go out automatically;
+            nudge to send one now (at most one reminder a day).
+          </p>
+          <Button
+            variant="secondary"
+            loading={nudge.isPending}
+            onClick={() =>
+              nudge.mutate(request.id, {
+                onSuccess: () => toast.success(`Reminder sent to ${request.ownerEmail}`),
+                onError: (error) => toast.error(errorMessage(error)),
+              })
+            }
+          >
+            <BellRing className="h-4 w-4" aria-hidden />
+            Nudge now
+          </Button>
+        </section>
+      )}
 
       {!readOnly && (request.status === 'SUBMITTED' || request.status === 'ACCEPTED') && (
         <section className="space-y-3 rounded-card border border-border bg-background p-4">
