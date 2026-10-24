@@ -14,7 +14,16 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url('DATABASE_URL must be a postgres:// connection URL'),
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
   /** Origin of the web app: used for the CSRF origin check and for the links in emails. */
-  WEB_ORIGIN: z.string().url('WEB_ORIGIN must be the full origin of the web app'),
+  WEB_ORIGIN: z
+    .string({
+      required_error:
+        'WEB_ORIGIN is required: the web app URL, e.g. https://evidencechase.vercel.app',
+    })
+    .url(
+      'WEB_ORIGIN must be a full URL starting with https://, e.g. https://evidencechase.vercel.app',
+    )
+    // Browsers send the bare origin, so "https://app.vercel.app/" or ".../login" would never match.
+    .transform((value) => new URL(value).origin),
   /** Number of proxies in front of the API. See .env.example. */
   TRUST_PROXY: z.coerce.number().int().min(0).default(0),
 
@@ -52,8 +61,12 @@ export type Env = z.infer<typeof envSchema>;
 
 /** Reads and validates configuration once at startup, so a missing variable fails fast and loudly. */
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
+  // An empty value means "not set". That matters for S3_ENDPOINT: writing `S3_ENDPOINT=` in an env
+  // file both means "use real AWS" and stops tools that read .env (Prisma) from filling in the
+  // local MinIO/RustFS endpoint behind your back.
+  const provided = Object.fromEntries(Object.entries(source).filter(([, value]) => value !== ''));
   const result = envSchema.safeParse({
-    ...source,
+    ...provided,
     // Render sets RENDER_EXTERNAL_URL on every web service (e.g. https://evidencechase-api.onrender.com),
     // so the API knows its own public URL without anyone typing it in.
     API_PUBLIC_URL: source.API_PUBLIC_URL || source.RENDER_EXTERNAL_URL || undefined,

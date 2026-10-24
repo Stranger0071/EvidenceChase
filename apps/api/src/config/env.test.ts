@@ -52,3 +52,27 @@ describe('loadEnv: API_PUBLIC_URL', () => {
     expect(() => loadEnv(PRODUCTION)).toThrow(/API_PUBLIC_URL/);
   });
 });
+
+describe('loadEnv: WEB_ORIGIN', () => {
+  it('keeps only the origin, so a trailing slash or path still matches what browsers send', () => {
+    expect(loadEnv({ ...BASE, WEB_ORIGIN: 'https://evidencechase.vercel.app/' }).WEB_ORIGIN).toBe(
+      'https://evidencechase.vercel.app',
+    );
+    expect(
+      loadEnv({ ...BASE, WEB_ORIGIN: 'https://evidencechase.vercel.app/login' }).WEB_ORIGIN,
+    ).toBe('https://evidencechase.vercel.app');
+  });
+
+  it('explains what is wrong when it is missing or not a URL', () => {
+    expect(() => loadEnv({ ...BASE, WEB_ORIGIN: undefined })).toThrow(/WEB_ORIGIN is required/);
+    expect(() => loadEnv({ ...BASE, WEB_ORIGIN: 'evidencechase.vercel.app' })).toThrow(
+      /starting with https:\/\//,
+    );
+  });
+});
+
+describe('loadEnv: empty values', () => {
+  it('treats S3_ENDPOINT= as unset, meaning real AWS S3', () => {
+    expect(loadEnv({ ...BASE, S3_ENDPOINT: '' }).S3_ENDPOINT).toBeUndefined();
+  });
+});

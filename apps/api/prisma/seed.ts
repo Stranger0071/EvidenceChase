@@ -162,6 +162,14 @@ async function main() {
   const prisma = new PrismaClient({ datasourceUrl: env.DATABASE_URL });
   const canUpload = Boolean(env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY);
 
+  // Say where this is about to write, so seeding the wrong database or bucket is obvious at once.
+  console.log(`Database: ${new URL(env.DATABASE_URL).host}`);
+  console.log(
+    canUpload
+      ? `Storage:  bucket "${env.S3_BUCKET}" on ${env.S3_ENDPOINT ?? `AWS S3 (${env.AWS_REGION})`}`
+      : 'Storage:  not configured',
+  );
+
   try {
     const user = await prisma.user.upsert({
       where: { email: DEMO_EMAIL },
