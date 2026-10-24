@@ -52,7 +52,12 @@ export type Env = z.infer<typeof envSchema>;
 
 /** Reads and validates configuration once at startup, so a missing variable fails fast and loudly. */
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
-  const result = envSchema.safeParse(source);
+  const result = envSchema.safeParse({
+    ...source,
+    // Render sets RENDER_EXTERNAL_URL on every web service (e.g. https://evidencechase-api.onrender.com),
+    // so the API knows its own public URL without anyone typing it in.
+    API_PUBLIC_URL: source.API_PUBLIC_URL || source.RENDER_EXTERNAL_URL || undefined,
+  });
   if (!result.success) {
     const problems = result.error.issues
       .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
