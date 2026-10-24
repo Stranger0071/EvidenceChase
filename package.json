@@ -4,7 +4,7 @@
   "description": "Audit evidence collection without the spreadsheet-and-email chaos.",
   "packageManager": "pnpm@11.20.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.9"
   },
   "scripts": {
     "dev": "pnpm --parallel --filter @evidencechase/api --filter @evidencechase/web dev",
@@ -12,18 +12,23 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r typecheck && tsc -p e2e/tsconfig.json",
     "test": "pnpm -r test",
     "test:integration": "pnpm --filter @evidencechase/api test:integration",
+    "test:e2e": "playwright test",
     "db:migrate": "pnpm --filter @evidencechase/api db:migrate",
     "db:seed": "pnpm --filter @evidencechase/api db:seed",
     "storage:setup": "pnpm --filter @evidencechase/api storage:setup"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@eslint/js": "^9.35.0",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^22.20.5",
     "eslint": "^9.35.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^16.4.0",
+    "jszip": "^3.10.2",
     "prettier": "^3.6.2",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.44.0"

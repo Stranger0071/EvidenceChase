@@ -100,7 +100,15 @@ export function createApp(deps: AppDeps): Express {
   const app = express();
   app.set('trust proxy', env.TRUST_PROXY);
 
-  app.use(helmet());
+  // The API only ever returns JSON and file downloads, never pages, so it allows no content at all.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"], baseUri: ["'none'"] },
+      },
+    }),
+  );
   app.use(
     pinoHttp({
       logger,
@@ -112,6 +120,13 @@ export function createApp(deps: AppDeps): Express {
       },
       // The keep-alive ping hits /health every few minutes; don't flood the logs with it.
       autoLogging: { ignore: (req) => req.url === '/health' },
+      // Export links carry their signature in the query string. Keep it out of the logs.
+      serializers: {
+        req: (req: { url?: string }) => ({
+          ...req,
+          url: req.url?.startsWith('/exports/') ? req.url.split('?')[0] : req.url,
+        }),
+      },
     }),
   );
   app.use(express.json({ limit: '100kb' }));

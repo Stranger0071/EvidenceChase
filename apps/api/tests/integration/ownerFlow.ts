@@ -49,7 +49,7 @@ export async function issueToken(
 }
 
 export function tokenFromUrl(url: string): string {
-  return url.split('/e/')[1]!;
+  return new URL(url).hash.slice(1);
 }
 
 /** Requests as the owner: the magic-link token goes in a header, with no cookie or origin. */

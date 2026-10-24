@@ -51,8 +51,11 @@ export function useEvidenceUpload(token: string) {
 
   const add = useCallback((files: Iterable<File>) => {
     setError(null);
+    // Copy now: a FileList from an <input> or a drop is live, and is emptied as soon as the input
+    // is reset, which happens before React runs the state update below.
+    const chosen = Array.from(files);
     setItems((current) => {
-      const added = [...files].map((file): SelectedFile => {
+      const added = chosen.map((file): SelectedFile => {
         const type = declaredTypeFor(file.name, file.type);
         const problem = !type
           ? "This type of file isn't accepted"

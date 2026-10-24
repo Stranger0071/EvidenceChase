@@ -13,7 +13,8 @@ import { ApiError } from '@/lib/api-client';
 function redirectToLoginOn401(error: unknown) {
   if (!(error instanceof ApiError) || error.status !== 401) return;
   const { pathname, search } = window.location;
-  if (['/login', '/signup', '/e/'].some((prefix) => pathname.startsWith(prefix))) return;
+  const isOwnerPage = pathname === '/e' || pathname.startsWith('/e/');
+  if (isOwnerPage || ['/login', '/signup'].some((prefix) => pathname.startsWith(prefix))) return;
   window.location.assign(`/login?next=${encodeURIComponent(pathname + search)}`);
 }
 
@@ -38,7 +39,8 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       {children}
-      <Toaster position="bottom-right" richColors closeButton />
+      {/* Plain toasts (dark text on white, with icons): richColors fails WCAG contrast. */}
+      <Toaster position="bottom-right" closeButton />
     </QueryClientProvider>
   );
 }

@@ -32,7 +32,9 @@ export function createTokenService(
       const raw = randomBytes(TOKEN_BYTES).toString('base64url');
       const expiresAt = new Date(clock().getTime() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
       await tokens.create(requestId, hashToken(raw), expiresAt);
-      return { url: `${env.WEB_ORIGIN}/e/${raw}`, expiresAt };
+      // The token goes in the URL fragment (after #), which browsers never send to a server, so it
+      // can't end up in the web host's access logs. The owner page reads it and sends it as a header.
+      return { url: `${env.WEB_ORIGIN}/e#${raw}`, expiresAt };
     },
 
     /** Resolves a token from the X-Access-Token header, or throws with a code the portal can explain. */

@@ -123,7 +123,7 @@ function OverdueList({
           <span className="font-mono text-xs">{item.controlRef}</span>
           <button
             type="button"
-            className="min-w-0 flex-1 truncate text-left text-sm font-medium hover:text-primary hover:underline"
+            className="w-full min-w-0 text-left text-sm font-medium hover:text-primary hover:underline sm:w-auto sm:flex-1 sm:truncate"
             onClick={() => onOpen(item.id)}
           >
             {item.title}
@@ -210,7 +210,7 @@ export function AuditDashboard({
                 {data.owners.map((owner) => (
                   <li
                     key={owner.ownerEmail}
-                    className="grid grid-cols-1 items-center gap-1 sm:grid-cols-[minmax(0,12rem)_1fr_auto] sm:gap-3"
+                    className="grid grid-cols-1 items-center gap-1 sm:grid-cols-[minmax(0,12rem)_1fr_10rem] sm:gap-3"
                   >
                     <span className="truncate text-sm" title={owner.ownerEmail}>
                       {owner.ownerName ?? owner.ownerEmail}

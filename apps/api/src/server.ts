@@ -26,15 +26,26 @@ const server = app.listen(env.PORT, () => {
  * Render sends SIGTERM before replacing the instance on a redeploy. Stop taking new connections,
  * let in-flight requests finish, then close the database connections.
  */
+let shuttingDown = false;
 function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   logger.info({ signal }, 'Shutting down');
-  const forceExit = setTimeout(() => process.exit(1), 10_000);
+  // Requests still running after 10 seconds are cut off rather than blocking the redeploy.
+  const forceExit = setTimeout(() => {
+    logger.warn('Shutdown timed out; exiting with requests still open');
+    process.exit(1);
+  }, 10_000);
   forceExit.unref();
 
   server.close(async () => {
     await Promise.allSettled([prisma.$disconnect(), pool.end()]);
+    logger.info('Shutdown complete');
     process.exit(0);
   });
+  // Idle keep-alive connections (the proxy keeps some open) would otherwise hold close() open
+  // until the timeout. Busy connections are left to finish their request.
+  server.closeIdleConnections();
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));

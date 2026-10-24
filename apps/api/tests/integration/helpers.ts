@@ -27,7 +27,7 @@ export class FakeMailer implements MailerPort {
   linksTo(address: string): string[] {
     return this.sent
       .filter((message) => message.to === address)
-      .flatMap((message) => message.text.match(/https?:\/\/\S+\/e\/[\w-]+/g) ?? []);
+      .flatMap((message) => message.text.split(/\s+/).filter((word) => word.includes('/e#')));
   }
 }
 

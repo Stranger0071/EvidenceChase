@@ -48,6 +48,83 @@ jobs:
       - run: pnpm test:integration
       - run: pnpm build
 
+  # The whole product in a real browser: Next.js → Express → Postgres, with uploads going to an
+  # S3-compatible server (RustFS). Runs against the production builds, so it also checks the
+  # production Content-Security-Policy (any CSP violation fails the test).
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: evidencechase
+          POSTGRES_PASSWORD: evidencechase
+          POSTGRES_DB: evidencechase_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U evidencechase"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      s3:
+        image: rustfs/rustfs:latest
+        env:
+          RUSTFS_ACCESS_KEY: evidencechase
+          RUSTFS_SECRET_KEY: evidencechase-secret
+        ports:
+          - 9000:9000
+
+    # Throwaway values for this disposable test environment, not real credentials. Marked so the
+    # secrets scan below doesn't flag them.
+    env:
+      CI: 'true'
+      NODE_ENV: test
+      LOG_LEVEL: warn
+      DATABASE_URL: postgresql://evidencechase:evidencechase@localhost:5432/evidencechase_e2e
+      SESSION_SECRET: ci-session-secret-that-is-at-least-32-characters # gitleaks:allow
+      WEB_ORIGIN: http://localhost:3000
+      TRUST_PROXY: '1'
+      API_PUBLIC_URL: http://localhost:4000
+      EXPORT_SIGNING_SECRET: ci-export-signing-secret-at-least-32-characters # gitleaks:allow
+      CRON_SECRET: ci-cron-secret-that-is-at-least-32-characters-long # gitleaks:allow
+      AWS_REGION: ap-southeast-1
+      AWS_ACCESS_KEY_ID: evidencechase # gitleaks:allow
+      AWS_SECRET_ACCESS_KEY: evidencechase-secret # gitleaks:allow
+      S3_BUCKET: evidencechase-dev
+      S3_ENDPOINT: http://localhost:9000
+      MALWARE_SCAN_ENABLED: 'false'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @evidencechase/api db:deploy
+      - name: Create the bucket (Object Lock, CORS, lifecycle)
+        run: |
+          for i in $(seq 1 30); do curl -s -o /dev/null http://localhost:9000 && break; sleep 1; done
+          pnpm storage:setup
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
   secrets-scan:
     runs-on: ubuntu-latest
     steps:

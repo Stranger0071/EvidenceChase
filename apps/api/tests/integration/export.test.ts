@@ -3,7 +3,7 @@ import Papa from 'papaparse';
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestContext, SAMPLE_FILES, signedInAgent, WEB_ORIGIN } from './helpers';
-import { setupRequest, uploadAndSubmit } from './ownerFlow';
+import { setupRequest, tokenFromUrl, uploadAndSubmit } from './ownerFlow';
 import type { Express } from 'express';
 
 const ctx = createTestContext();
@@ -36,7 +36,7 @@ async function auditWithEvidence(app: Express = ctx.makeApp()) {
     .post(`/audits/${setup.auditId}/requests/${second.body.request.id}/link`)
     .set('Origin', WEB_ORIGIN)
     .expect(201);
-  await uploadAndSubmit(app, ctx.storage, link.body.url.split('/e/')[1], [
+  await uploadAndSubmit(app, ctx.storage, tokenFromUrl(link.body.url), [
     { name: 'incidents.csv', type: 'text/csv', data: SAMPLE_FILES.csv },
   ]);
 

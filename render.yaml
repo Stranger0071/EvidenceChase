@@ -1,0 +1,62 @@
+# Render Blueprint: the API and its Postgres database, in Singapore (closest to India, and next to
+# the S3 bucket). In Render: New → Blueprint → pick this repo. Values marked `sync: false` are
+# asked for during setup; secrets marked `generateValue` are created by Render.
+databases:
+  - name: evidencechase-db
+    plan: free
+    region: singapore
+    databaseName: evidencechase
+    user: evidencechase
+
+services:
+  - type: web
+    name: evidencechase-api
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: apps/api
+    # --prod=false: with NODE_ENV=production pnpm would skip the dev dependencies the build needs.
+    # Migrations run here because pre-deploy commands are a paid feature.
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm build && pnpm db:deploy
+    startCommand: pnpm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: UTC
+      - key: LOG_LEVEL
+        value: info
+      - key: DATABASE_URL
+        fromDatabase:
+          name: evidencechase-db
+          property: connectionString # the internal URL: traffic stays inside Render
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      - key: EXPORT_SIGNING_SECRET
+        generateValue: true
+      # Vercel → Render: two proxies. Check req.ip in the logs after the first deploy.
+      - key: TRUST_PROXY
+        value: '2'
+      - key: WEB_ORIGIN
+        sync: false # https://<your-app>.vercel.app
+      - key: API_PUBLIC_URL
+        sync: false # https://evidencechase-api.onrender.com
+      - key: AWS_REGION
+        value: ap-southeast-1
+      - key: S3_BUCKET
+        sync: false # evidencechase-prod
+      - key: AWS_ACCESS_KEY_ID
+        sync: false # the least-privilege IAM user (infra/aws/api-policy.json)
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: MALWARE_SCAN_ENABLED
+        value: 'true'
+      - key: OBJECT_LOCK_RETENTION_DAYS
+        value: '90'
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false # EvidenceChase <evidence@your-verified-domain>
