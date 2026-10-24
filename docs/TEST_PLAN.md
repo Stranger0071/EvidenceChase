@@ -84,7 +84,8 @@ aws s3api get-object-retention --bucket $B --key "$K"                # expect: M
 | API key lists the bucket | AccessDenied | ☐ |
 | Plain-HTTP request to the bucket | 403 | ☐ |
 | Verified object has retention | GOVERNANCE, +90 days | ☐ |
-| Upload the EICAR test file through the owner portal | Within ~1 min: request sent back, "malware scan found a threat", file deleted | ☐ |
+| Upload a renamed executable (e.g. `setup.exe` → `invoice.pdf`) through the owner portal | Refused: "the file is really application/x-msdownload, not a .pdf file" | ☐ |
+| _Only if GuardDuty is enabled:_ upload the EICAR test file | Within ~1 min: request sent back, "malware scan found a threat", file deleted | n/a (scanning off) |
 
 ### Everything else
 

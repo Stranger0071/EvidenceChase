@@ -8,7 +8,7 @@ Before every compliance audit (SOC 2, ISO 27001, HIPAA), a compliance manager ha
 such as screenshots, access reviews and signed policies, from dozens of people across the company.
 Today that runs on a spreadsheet, email threads and a shared drive. EvidenceChase replaces all three:
 define what you need once, every owner gets a secure upload link, reminders go out automatically, every
-file is checked and scanned, and the dashboard always shows how ready you are for the auditor.
+file is checked before anyone opens it, and the dashboard always shows how ready you are for the auditor.
 
 |                 |                                                                                |
 | --------------- | ------------------------------------------------------------------------------ |
@@ -36,7 +36,7 @@ file is checked and scanned, and the dashboard always shows how ready you are fo
    link. A "Copy link" button works without email.
 3. **Owners upload with no account.** The link opens exactly one request. Files go straight to S3 with
    a progress bar, then are checked: real file type from the contents (a renamed `.exe` is caught), a
-   server-computed SHA-256, and a malware scan, all before the manager can open them.
+   server-computed SHA-256, and (with GuardDuty switched on) a malware scan, all before the manager can open them.
 4. **Reminders chase for you:** 7, 3 and 1 days before, on the day, and every 3 days once overdue, as
    one daily digest per owner. They stop as soon as evidence is in. "Nudge now" sends one immediately.
 5. **Review:** preview, accept, or send back with a comment the owner sees by email and on their page.
@@ -62,8 +62,8 @@ file is checked and scanned, and the dashboard always shows how ready you are fo
                           └───────────────┬─────────────────┘
                                           │ presign, verify, copy, retain
  Browser ── presigned POST / GET ──────▶ ┌▼────────────────────────────────────┐
- (file bytes never pass through the API) │ AWS S3: quarantine/ → evidence/      │ ◀── GuardDuty
-                                         │ private · versioned · Object Lock    │     malware scan
+ (file bytes never pass through the API) │ AWS S3: quarantine/ → evidence/      │ ◀── GuardDuty (optional,
+                                         │ private · versioned · Object Lock    │     paid; off in the demo)
                                          └──────────────────────────────────────┘
 ```
 
@@ -84,13 +84,13 @@ Every technology choice, with its reasoning and the alternatives considered, is 
 Each file has two halves: the **bytes** in a private S3 bucket and the **facts** (original name, size,
 real type, SHA-256, scan result, retention date) in Postgres, which is the source of truth.
 
-| Step   | What happens                                                                                                                                                                                               |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Upload | The API issues a 5-minute presigned POST that pins the exact key, type and size; S3 itself refuses anything else. The browser sends the file straight to `quarantine/{requestId}/{fileId}`.                |
-| Check  | The API reads the object once, as a stream: it detects the real type from its first bytes, checks text files are UTF-8, and computes its own SHA-256. Anything wrong is deleted and the owner is told why. |
-| Scan   | GuardDuty scans everything in `quarantine/` and tags the result. Only "no threats found" moves on; anything else, or no verdict within 30 minutes, is deleted and the request goes back to the owner.      |
-| Keep   | Clean files are copied to `evidence/{audit}/{request}/{submission}/{file}` and get an **Object Lock** retention date. The API's IAM user can't list the bucket, delete evidence or bypass the lock.        |
-| View   | Managers get 60-second links, forced to download (images and PDFs can preview). Files are served from S3's domain, never the app's.                                                                        |
+| Step            | What happens                                                                                                                                                                                                                                                                                        |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upload          | The API issues a 5-minute presigned POST that pins the exact key, type and size; S3 itself refuses anything else. The browser sends the file straight to `quarantine/{requestId}/{fileId}`.                                                                                                         |
+| Check           | The API reads the object once, as a stream: it detects the real type from its first bytes, checks text files are UTF-8, and computes its own SHA-256. Anything wrong is deleted and the owner is told why.                                                                                          |
+| Scan (optional) | With `MALWARE_SCAN_ENABLED=true`, GuardDuty scans `quarantine/` and only "no threats found" moves on; anything else, or no verdict within 30 minutes, is deleted and sent back to the owner. It's a paid AWS service, so the demo deployment runs with it off; the code and its tests are in place. |
+| Keep            | Clean files are copied to `evidence/{audit}/{request}/{submission}/{file}` and get an **Object Lock** retention date. The API's IAM user can't list the bucket, delete evidence or bypass the lock.                                                                                                 |
+| View            | Managers get 60-second links, forced to download (images and PDFs can preview). Files are served from S3's domain, never the app's.                                                                                                                                                                 |
 
 Owner links carry the token in the URL fragment (`/e#…`), which browsers never send to a server, so it
 can't appear in access logs; the page sends it to the API as a header. Only its SHA-256 is stored.
@@ -151,10 +151,12 @@ configured.
 - **Free Postgres expires** 30 days after creation (about 22 Nov 2026 for this deployment).
 - **Long-lived AWS key:** Render runs outside AWS, so the API uses an IAM access key. It's least
   privilege (can't list, delete evidence or bypass Object Lock); short-lived credentials are the fix.
-- **Scan delay:** GuardDuty usually takes under a minute; until then a file shows "Checking for malware"
-  and can't be accepted.
+- **No malware scanning in the demo deployment.** GuardDuty Malware Protection is a paid AWS service,
+  so it's switched off (`MALWARE_SCAN_ENABLED=false`). Files are still checked by their contents,
+  fingerprinted, quarantined until checked, and locked. Turning it on is one setting plus enabling
+  GuardDuty on the bucket; the scan path is covered by integration tests.
 - Magic links are bearer tokens: anyone holding one can upload to that one request (scoped, expiring,
-  revocable, rate-limited, scanned and reviewed).
+  revocable, rate-limited, content-checked and reviewed).
 - A day the reminder job misses is skipped rather than sent late.
 - No password reset, one manager per audit, no dark mode, rate limits kept in memory (fine for one
   instance).

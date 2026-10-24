@@ -52,8 +52,11 @@ services:
         sync: false # the least-privilege IAM user (infra/aws/api-policy.json)
       - key: AWS_SECRET_ACCESS_KEY
         sync: false
+      # GuardDuty Malware Protection is a paid AWS service, so the demo deployment runs without it.
+      # Files are still checked by content, fingerprinted and locked. Set 'true' once GuardDuty
+      # protects quarantine/ on the bucket.
       - key: MALWARE_SCAN_ENABLED
-        value: 'true'
+        value: 'false'
       - key: OBJECT_LOCK_RETENTION_DAYS
         value: '90'
       - key: RESEND_API_KEY

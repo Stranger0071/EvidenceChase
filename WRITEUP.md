@@ -15,7 +15,7 @@ send one file and be left alone.
 - **Reminders need no clicks.** A daily job sends each owner one digest, and stops as soon as evidence
   arrives. Each reminder is claimed in the database before it's sent, so a re-run never sends twice.
 - **Evidence is treated as untrusted until proven otherwise.** Files land in quarantine, are checked by
-  content rather than extension, fingerprinted by the server, scanned for malware, and only then moved
+  content rather than extension, fingerprinted by the server, optionally malware-scanned, and only then moved
   to write-once storage. The export re-checks every fingerprint.
 
 ## 3. What I cut, and what's next

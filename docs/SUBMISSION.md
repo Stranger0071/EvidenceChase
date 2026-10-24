@@ -9,13 +9,17 @@ Detailed account setup is in [phases.md](phases.md) under Prerequisites.
 
 1. **AWS:** create the `evidencechase-prod` bucket (Object Lock on), the IAM user with
    [`infra/aws/api-policy.json`](../infra/aws/api-policy.json), the bucket policy, CORS (with your Vercel
-   URL), the lifecycle rule, GuardDuty Malware Protection on `quarantine/`, and a $1 / $5 budget alert.
+   URL), the lifecycle rule, and a $1 / $5 budget alert. GuardDuty Malware Protection is optional and
+   paid, so skip it: `render.yaml` already sets `MALWARE_SCAN_ENABLED=false`.
 2. **Resend:** verify your sending domain (start this first: DNS can take hours).
 3. **Render:** New → Blueprint → this repo. Fill in the values it asks for. Note the API URL.
 4. **Vercel:** import the repo, root directory `apps/web`, env `API_ORIGIN` (Render URL) and
    `STORAGE_ORIGIN` (`https://evidencechase-prod.s3.ap-southeast-1.amazonaws.com`). Note the URL, then
    set `WEB_ORIGIN` on Render to it and update the bucket's CORS origin.
-5. **Demo data:** run the seed once against production (Render Shell: `pnpm db:seed`).
+5. **Demo data:** run the seed once from your own machine against production. Put the Render
+   database's *external* URL (with `?sslmode=require`) and the production AWS values in
+   `apps/api/.env.seed` (git-ignored), then from `apps/api` run
+   `pnpm exec tsx --env-file=.env.seed prisma/seed.ts`. The Render Shell isn't available on the free plan.
 6. **cron-job.org:** scan-check every 5 minutes and reminders daily at 03:30 UTC, both `POST` with
    `Authorization: Bearer <CRON_SECRET>` (copy the secret from Render's environment tab).
 7. **UptimeRobot (optional):** monitors on the Vercel URL and `<api>/health`.
@@ -33,7 +37,7 @@ private window for the owner.
 | 0:15 | Sign in as the demo manager. The dashboard: 14% ready, who's overdue, who to chase. |
 | 0:35 | New audit → import the sample CSV (show one bad row being caught first, if time allows) → Send requests. |
 | 0:55 | Owner window: open the link. No login. Drag in a PDF, add a note, submit. |
-| 1:15 | Owner: upload the EICAR test file on another request. Within a minute it's flagged and sent back. |
+| 1:15 | Owner: rename any `.exe` (or `.zip`) to `invoice.pdf` and upload it: it's refused with "the file is really …, not a .pdf file". |
 | 1:35 | Manager: review → request changes with a comment. Owner sees it, resubmits. Manager accepts. |
 | 2:00 | "Nudge now" on an overdue request; mention the daily digest and the one-email-a-day cap. |
 | 2:15 | Export → open the ZIP → `index.csv` with SHA-256 fingerprints all `OK`; show the Object Lock date in the S3 console. |
@@ -68,7 +72,7 @@ The brief asks for the submission to go to the contact it names (swati.m@v-compl
 >
 > EvidenceChase helps compliance managers collect audit evidence without chasing people: owners get a
 > secure upload link instead of a login, reminders go out automatically, every file is checked and
-> scanned before review, and the evidence pack exports with verified fingerprints.
+> checked by its real contents before review, and the evidence pack exports with verified fingerprints.
 >
 > The API is on Render's free tier, so the very first request after a quiet period can take up to a
 > minute while it wakes up.
