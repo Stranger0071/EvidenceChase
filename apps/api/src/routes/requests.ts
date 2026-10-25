@@ -1,4 +1,9 @@
-import { CSV_IMPORT_LIMITS, requestInputSchema, requestUpdateSchema } from '@evidencechase/shared';
+import {
+  CSV_IMPORT_LIMITS,
+  requestInputSchema,
+  requestUpdateSchema,
+  sendRequestsSchema,
+} from '@evidencechase/shared';
 import express, { Router, type Request } from 'express';
 import { ValidationError } from '../errors';
 import { parseId, parseInput } from '../lib/validate';
@@ -34,9 +39,12 @@ export function createRequestsRouter(
     res.status(201).json({ request });
   });
 
-  // Emails every owner who still owes evidence, one email each with all of their links.
+  // Emails the chosen owners who still owe evidence, one email each with all of their links.
+  // No body means everyone, as before the audience options existed.
   router.post('/send', async (req, res) => {
-    res.json(await requestService.sendRequests(currentUserId(req), auditIdOf(req)));
+    const auditId = auditIdOf(req);
+    const data = parseInput(sendRequestsSchema, req.body ?? {});
+    res.json(await requestService.sendRequests(currentUserId(req), auditId, data));
   });
 
   // A fresh magic link for one request: the "Copy link" fallback that works without email.

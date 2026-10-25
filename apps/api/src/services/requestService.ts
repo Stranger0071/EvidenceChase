@@ -6,6 +6,8 @@ import {
   type MagicLinkDto,
   type RequestData,
   type RequestUpdateData,
+  type SendAudience,
+  type SendRequestsData,
   type SendRequestsResultDto,
 } from '@evidencechase/shared';
 import { OPEN_STATUSES } from '../domain/overdue';
@@ -19,6 +21,14 @@ import type { NotificationService } from './notificationService';
 import type { TokenService } from './tokenService';
 
 const CSV_FIRST_DATA_ROW = 2;
+
+/** Why a narrowed send matched nothing, when some evidence is still owed. */
+const NOTHING_TO_SEND_MESSAGES: Record<SendAudience, string> = {
+  all: 'Every request already has evidence submitted',
+  overdue: 'No requests are overdue',
+  changes_requested: 'No requests are waiting on changes',
+  selected: 'None of the people chosen still owe evidence',
+};
 
 function duplicateControlRef(controlRef: string): ConflictError {
   return new ConflictError(
@@ -73,10 +83,15 @@ export function createRequestService(
     },
 
     /**
-     * Emails every owner who still owes evidence: one email per owner, listing all of their open
-     * requests with a fresh link each. Archived audits send nothing (they're read-only).
+     * Emails the owners in the chosen audience who still owe evidence: one email per owner,
+     * listing their matching open requests with a fresh link each. Archived audits send nothing
+     * (they're read-only).
      */
-    async sendRequests(ownerId: string, auditId: string): Promise<SendRequestsResultDto> {
+    async sendRequests(
+      ownerId: string,
+      auditId: string,
+      { audience, ownerEmails }: SendRequestsData,
+    ): Promise<SendRequestsResultDto> {
       const audit = await getEditableAudit(ownerId, auditId);
       const open = (await requests.listByAudit(auditId)).filter((request) =>
         OPEN_STATUSES.includes(request.status),
@@ -88,8 +103,26 @@ export function createRequestService(
           'NOTHING_TO_SEND',
         );
       }
-      const result = await links.notifications.sendEvidenceRequests(audit.name, open);
-      return { ...result, requestsIncluded: open.length };
+
+      const chosen = new Set(ownerEmails.map((email) => email.toLowerCase()));
+      const matching = open.filter((request) => {
+        switch (audience) {
+          case 'all':
+            return true;
+          case 'overdue':
+            return toDto(request).isOverdue;
+          case 'changes_requested':
+            return request.status === 'CHANGES_REQUESTED';
+          case 'selected':
+            return chosen.has(request.ownerEmail.toLowerCase());
+        }
+      });
+      if (matching.length === 0) {
+        throw new ValidationError(NOTHING_TO_SEND_MESSAGES[audience], undefined, 'NOTHING_TO_SEND');
+      }
+
+      const result = await links.notifications.sendEvidenceRequests(audit.name, matching);
+      return { ...result, requestsIncluded: matching.length };
     },
 
     /** A fresh magic link for one request, for the "Copy link" button (works without email). */

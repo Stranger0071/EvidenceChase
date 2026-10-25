@@ -22,13 +22,14 @@ import { CsvImportDialog } from '@/components/requests/csv-import-dialog';
 import { RequestFormDialog } from '@/components/requests/request-form-dialog';
 import { RequestReviewDialog } from '@/components/requests/request-review-dialog';
 import { RequestsTable } from '@/components/requests/requests-table';
+import { SendRequestsDialog } from '@/components/requests/send-requests-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/states';
 import { useArchiveAudit, useAudit } from '@/hooks/use-audits';
 import { useDeleteRequest, useRequests } from '@/hooks/use-requests';
-import { useCopyLink, useSendRequests } from '@/hooks/use-review';
+import { useCopyLink } from '@/hooks/use-review';
 import { errorMessage } from '@/lib/api-client';
 import { formatDate } from '@/lib/utils';
 
@@ -51,7 +52,6 @@ export default function AuditDetailPage() {
   const requests = useRequests(auditId);
   const archiveAudit = useArchiveAudit(auditId);
   const deleteRequest = useDeleteRequest(auditId);
-  const sendRequests = useSendRequests(auditId);
   const copyLink = useCopyLink(auditId);
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const closeDialog = () => setDialog(null);
@@ -227,30 +227,11 @@ export default function AuditDetailPage() {
         readOnly={isArchived}
         onOpenChange={closeDialog}
       />
-      <ConfirmDialog
+      <SendRequestsDialog
+        auditId={auditId}
+        requests={requests.data ?? []}
         open={dialog?.kind === 'send'}
         onOpenChange={closeDialog}
-        title="Send evidence requests?"
-        description="Every owner who still owes evidence gets one email listing all of their requests, each with its own secure upload link. Owners who already submitted are skipped."
-        confirmLabel="Send emails"
-        loading={sendRequests.isPending}
-        onConfirm={() =>
-          sendRequests.mutate(undefined, {
-            onSuccess: ({ emailsSent, requestsIncluded, failedRecipients }) => {
-              closeDialog();
-              toast.success(
-                `Sent ${emailsSent} email${emailsSent === 1 ? '' : 's'} covering ${requestsIncluded} request${requestsIncluded === 1 ? '' : 's'}`,
-              );
-              if (failedRecipients.length > 0) {
-                toast.error(
-                  `Couldn't email ${failedRecipients.join(', ')}. Use "Copy link" to send their links another way.`,
-                  { duration: 15_000 },
-                );
-              }
-            },
-            onError: (error) => toast.error(errorMessage(error)),
-          })
-        }
       />
       <ConfirmDialog
         open={dialog?.kind === 'archive'}

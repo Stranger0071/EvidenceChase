@@ -25,6 +25,25 @@ export const requestUpdateSchema = requestInputSchema
 export type RequestUpdateInput = z.input<typeof requestUpdateSchema>;
 export type RequestUpdateData = z.output<typeof requestUpdateSchema>;
 
+/**
+ * Who "Send requests" emails. Every audience is limited to requests that still owe evidence:
+ * "overdue" and "changes_requested" narrow that to those requests, "selected" to the chosen owners.
+ */
+export const SEND_AUDIENCES = ['all', 'overdue', 'changes_requested', 'selected'] as const;
+export type SendAudience = (typeof SEND_AUDIENCES)[number];
+
+export const sendRequestsSchema = z
+  .object({
+    audience: z.enum(SEND_AUDIENCES).default('all'),
+    ownerEmails: z.array(emailSchema).max(500, 'Too many people selected').default([]),
+  })
+  .refine((value) => value.audience !== 'selected' || value.ownerEmails.length > 0, {
+    message: 'Choose at least one person',
+    path: ['ownerEmails'],
+  });
+export type SendRequestsInput = z.input<typeof sendRequestsSchema>;
+export type SendRequestsData = z.output<typeof sendRequestsSchema>;
+
 export const csvImportInputSchema = z.object({
   csv: z.string().min(1, 'The file is empty'),
 });

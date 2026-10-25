@@ -363,6 +363,75 @@ describe('sending requests', () => {
     expect(result.body).toMatchObject({ emailsSent: 0, failedRecipients: ['rahul@example.com'] });
   });
 
+  describe('to a narrower audience', () => {
+    /** Rahul owes CC6.1 (due 2099); Vikram owes an overdue CC7.2 and a sent-back CC8.1. */
+    async function setupMixed(app: ReturnType<typeof ctx.makeApp>) {
+      const { agent, auditId } = await setupRequest(app);
+      const add = (body: Record<string, string>) =>
+        agent
+          .post(`/audits/${auditId}/requests`)
+          .set('Origin', WEB_ORIGIN)
+          .send({ ownerEmail: 'vikram@example.com', ...body })
+          .expect(201);
+      await add({ controlRef: 'CC7.2', title: 'Incident log', dueDate: '2020-01-01' });
+      const sentBack = await add({ controlRef: 'CC8.1', title: 'Changes', dueDate: '2099-11-10' });
+      await ctx.prisma.evidenceRequest.update({
+        where: { id: sentBack.body.request.id },
+        data: { status: 'CHANGES_REQUESTED' },
+      });
+      const send = (body: object) =>
+        agent.post(`/audits/${auditId}/requests/send`).set('Origin', WEB_ORIGIN).send(body);
+      return { send };
+    }
+
+    it('emails only overdue requests', async () => {
+      const { send } = await setupMixed(ctx.makeApp());
+      const result = await send({ audience: 'overdue' }).expect(200);
+      expect(result.body).toEqual({ emailsSent: 1, requestsIncluded: 1, failedRecipients: [] });
+      expect(ctx.mailer.linksTo('vikram@example.com')).toHaveLength(1);
+      expect(ctx.mailer.linksTo('rahul@example.com')).toHaveLength(0);
+    });
+
+    it('emails only requests sent back for changes', async () => {
+      const { send } = await setupMixed(ctx.makeApp());
+      const result = await send({ audience: 'changes_requested' }).expect(200);
+      expect(result.body).toMatchObject({ emailsSent: 1, requestsIncluded: 1 });
+      expect(ctx.mailer.linksTo('rahul@example.com')).toHaveLength(0);
+    });
+
+    it('emails the chosen people all of their open requests', async () => {
+      const { send } = await setupMixed(ctx.makeApp());
+      const result = await send({
+        audience: 'selected',
+        ownerEmails: ['Vikram@Example.com'],
+      }).expect(200);
+      expect(result.body).toMatchObject({ emailsSent: 1, requestsIncluded: 2 });
+      expect(ctx.mailer.linksTo('vikram@example.com')).toHaveLength(2);
+      expect(ctx.mailer.linksTo('rahul@example.com')).toHaveLength(0);
+    });
+
+    it('requires at least one person when choosing people', async () => {
+      const { send } = await setupMixed(ctx.makeApp());
+      const result = await send({ audience: 'selected', ownerEmails: [] }).expect(422);
+      expect(result.body.error.details).toHaveProperty('ownerEmails');
+    });
+
+    it('says when a narrower audience matches nothing', async () => {
+      const app = ctx.makeApp();
+      const { agent, auditId } = await setupRequest(app);
+      const result = await agent
+        .post(`/audits/${auditId}/requests/send`)
+        .set('Origin', WEB_ORIGIN)
+        .send({ audience: 'overdue' })
+        .expect(422);
+      expect(result.body.error).toMatchObject({
+        code: 'NOTHING_TO_SEND',
+        message: 'No requests are overdue',
+      });
+      expect(ctx.mailer.sent).toHaveLength(0);
+    });
+  });
+
   it('has nothing to send once all evidence is in', async () => {
     const app = ctx.makeApp();
     const { agent, auditId, token } = await setupRequest(app);

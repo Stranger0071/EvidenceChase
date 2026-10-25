@@ -6,6 +6,7 @@ import type {
   FileUrlDto,
   MagicLinkDto,
   ReviewRequestInput,
+  SendRequestsInput,
   SendRequestsResultDto,
   SubmissionDto,
 } from '@evidencechase/shared';
@@ -63,7 +64,8 @@ export function useFileUrl() {
 
 export function useSendRequests(auditId: string) {
   return useMutation({
-    mutationFn: () => api.post<SendRequestsResultDto>(`/audits/${auditId}/requests/send`),
+    mutationFn: (input: SendRequestsInput) =>
+      api.post<SendRequestsResultDto>(`/audits/${auditId}/requests/send`, input),
   });
 }
 
