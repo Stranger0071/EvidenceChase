@@ -44,7 +44,7 @@ services:
         sync: false # https://<your-app>.vercel.app
       # API_PUBLIC_URL isn't needed: the API uses RENDER_EXTERNAL_URL, which Render sets itself.
       - key: AWS_REGION
-        value: ap-southeast-1
+        value: ap-southeast-2
       - key: S3_BUCKET
         sync: false # evidencechase-prod
       - key: AWS_ACCESS_KEY_ID
