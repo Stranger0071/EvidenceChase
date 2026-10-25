@@ -2,50 +2,92 @@
 
 [![CI](https://github.com/Stranger0071/EvidenceChase/actions/workflows/ci.yml/badge.svg)](https://github.com/Stranger0071/EvidenceChase/actions/workflows/ci.yml)
 
-**Give your control owners a link, not a login. EvidenceChase does the chasing.**
+EvidenceChase is a web app for collecting audit evidence. A compliance manager lists everything the
+auditor needs, each person who has to provide something gets a secure upload link (no account
+needed), and the app sends the reminders and checks the files so the manager doesn't have to.
 
-Before every compliance audit (SOC 2, ISO 27001, HIPAA), a compliance manager has to collect evidence,
-such as screenshots, access reviews and signed policies, from dozens of people across the company.
-Today that runs on a spreadsheet, email threads and a shared drive. EvidenceChase replaces all three:
-define what you need once, every owner gets a secure upload link, reminders go out automatically, every
-file is checked before anyone opens it, and the dashboard always shows how ready you are for the auditor.
+|                |                                                                 |
+| -------------- | --------------------------------------------------------------- |
+| **Live app**   | https://evidence-chase.vercel.app/                              |
+| **Demo login** | `demo@evidencechase.app` / `evidence-demo-2026`                 |
+| **Write-up**   | [WRITEUP.md](WRITEUP.md) (problem, decisions, cuts, what broke) |
+| **Test plan**  | [docs/TEST_PLAN.md](docs/TEST_PLAN.md)                          |
 
-|                 |                                                                                |
-| --------------- | ------------------------------------------------------------------------------ |
-| **Live app**    | _https://evidence-chase.vercel.app/_                                           |
-| **Demo login**  | `demo@evidencechase.app` / `evidence-demo-2026`                                |
-| **Write-up**    | [WRITEUP.md](WRITEUP.md) (problem, decisions, cuts, what broke)                |
-| **Design docs** | [PRD](docs/PRD.md) · [Phases](docs/phases.md) · [Test plan](docs/TEST_PLAN.md) |
+> The API is on Render's free tier, which sleeps after 15 minutes without traffic. If the first page
+> is slow, the server is just waking up. It's fast after that.
 
-> The API runs on Render's free tier and sleeps after 15 idle minutes. If the first page takes a while,
-> it's waking up: the app says so, and it's quick after that.
+## The problem
+
+Before a compliance audit (SOC 2, ISO 27001, HIPAA and so on), someone has to collect evidence from
+across the company: MFA screenshots, access reviews, signed policies, training reports, backup test
+records. Usually that's 30 to 150 items from 10 or more people.
+
+From what I found, most teams do this with a spreadsheet, a pile of email threads and a shared drive.
+The manager spends weeks chasing people, files end up in the wrong place or in the wrong format, and
+it's hard to tell how close you are to being ready. Nobody can easily prove that a file wasn't changed
+after it was handed in, either.
+
+I wanted to replace all three with one tool that does the chasing and keeps the evidence trustworthy.
 
 ## Who it's for
 
-- **Compliance managers** at 50–500 person companies, preparing for an audit with a fixed date and
-  30–150 evidence requests.
-- **Control owners** (engineers, HR, IT, finance), who will never create another account just to send
-  one file.
+- **Compliance managers** at companies of roughly 50 to 500 people who have an audit coming up on a
+  fixed date. They create the audit, send the requests, review what comes back and export the final
+  pack for the auditor.
+- **Control owners**: the engineers, HR, IT and finance people who actually have the evidence. They
+  only use the app once or twice per audit, so they shouldn't need an account. They just open the link
+  from their email and upload.
 
 ## What it does
 
-1. **Set up an audit** by hand or by importing a CSV. The import is all-or-nothing: every problem is
-   reported with its spreadsheet row number, and nothing is imported unless every row is valid.
-2. **Send requests.** Each owner gets one email listing all of their requests, each with its own magic
-   link. A "Copy link" button works without email.
-3. **Owners upload with no account.** The link opens exactly one request. Files go straight to S3 with
-   a progress bar, then are checked: real file type from the contents (a renamed `.exe` is caught), a
-   server-computed SHA-256, and (with GuardDuty switched on) a malware scan, all before the manager can open them.
-4. **Reminders chase for you:** 7, 3 and 1 days before, on the day, and every 3 days once overdue, as
-   one daily digest per owner. They stop as soon as evidence is in. "Nudge now" sends one immediately.
-5. **Review:** preview, accept, or send back with a comment the owner sees by email and on their page.
-   Two reviewers can never overwrite each other, and every step is in an append-only activity log.
-6. **Dashboard:** % ready, a status breakdown, progress per owner (who to chase first), the most overdue
-   requests, and files still being scanned. Every chart has a table view.
-7. **Export the evidence pack:** a ZIP with a folder per control and an `index.csv` in which each file's
-   fingerprint is re-checked during the export (OK / MISMATCH / MISSING), with who accepted it and when.
+1. **Set up an audit**, either one request at a time or by importing a CSV. The import is
+   all-or-nothing: if any row has a problem, nothing is imported and every problem is listed with its
+   row number. Two ready-made samples are included:
+   [ISO 27001](apps/web/public/sample-iso27001-requests.csv) and
+   [HIPAA](apps/web/public/sample-hipaa-requests.csv).
+2. **Send requests.** Each owner gets one email listing all of their requests, each with its own link.
+   You can send to everyone, only overdue requests, only requests sent back for changes, or people you
+   pick from a list. There's also a "Copy link" button in case email isn't an option.
+3. **Owners upload without an account.** The link opens exactly one request. Files go straight to S3
+   with a progress bar and are then checked (see below) before the manager can open them.
+4. **Automatic reminders** go out 7, 3 and 1 days before the due date, on the day, and every 3 days
+   once it's overdue. Each owner gets at most one reminder email a day, and reminders stop as soon as
+   the evidence is in. "Nudge now" sends one straight away.
+5. **Review**: preview a file, accept it, or send it back with a comment. The owner sees the comment
+   in an email and on their page. Two reviewers can't overwrite each other's decisions, and every step
+   is recorded in an activity log.
+6. **Dashboard** showing how ready the audit is, progress per owner (so you know who to chase), the
+   most overdue requests and any files still being checked. Every chart also has a table view.
+7. **Export the evidence pack**: a ZIP with a folder per control and an `index.csv`. Each file's
+   fingerprint is re-checked while the ZIP is built, so the auditor can see that nothing changed.
 
-## Architecture
+## How uploaded files are checked
+
+I spent a lot of time on this part because the whole point is that the evidence can be trusted.
+
+1. **Before uploading**, the API checks the file's name, type and size against an allow-list (PDF,
+   PNG, JPG, CSV, TXT, XLSX and DOCX, up to 25 MB). It then gives the browser a 5-minute upload link
+   that only works for that exact file name, type and size. S3 itself rejects anything else.
+2. **The file goes to a `quarantine/` folder** in a private S3 bucket. It never passes through my API.
+3. **When the owner submits**, the API reads the file back and:
+   - works out the real type from the first bytes, so an `.exe` renamed to `.pdf` gets caught;
+   - checks that CSV and TXT files are actually text;
+   - calculates a SHA-256 fingerprint on the server (it never trusts one from the browser).
+
+   If something is wrong, the file is deleted and the owner is told why.
+
+4. **Malware scan (optional):** with AWS GuardDuty switched on, a file only moves on if the scan says
+   "no threats found". Anything else, or no answer within 30 minutes, gets rejected.
+5. **Before moving the file to `evidence/`**, the API checks the fingerprint again, so the file can't be
+   swapped after it was checked. The copy is then locked with S3 Object Lock for 90 days, so it can't be
+   changed or deleted.
+6. **Managers view files through links that expire after 60 seconds**, served from S3's domain rather
+   than the app's.
+
+Owner links keep the token after a `#` in the URL. Browsers never send that part to a server, so it
+can't end up in access logs. Only a hash of the token is stored in the database.
+
+## How it's built
 
 ```
                           ┌──────────── Vercel ─────────────┐
@@ -66,103 +108,86 @@ file is checked before anyone opens it, and the dashboard always shows how ready
                                          └──────────────────────────────────────┘
 ```
 
-- **`packages/shared`**: Zod schemas, types and the CSV parser, used by both apps so the API contract
-  can't drift.
-- **`apps/api`**: routes handle HTTP only; services hold the business rules; `src/domain` is pure
-  functions (state machine, reminder schedule, scan decisions, file rules) with exhaustive unit tests;
-  repositories are the only code that touches Prisma, and every query is scoped to the signed-in
-  manager (IDOR protection).
-- **`apps/web`**: Next.js App Router, TanStack Query, React Hook Form with the shared schemas, and
-  accessible UI built on Radix.
+It's a pnpm monorepo with three parts:
 
-Every technology choice, with its reasoning and the alternatives considered, is in
-[PRD §9](docs/PRD.md).
+- **`packages/shared`**: the Zod schemas, types and CSV parser. Both apps use them, so the frontend
+  and backend can't disagree about what valid data looks like.
+- **`apps/api`**: Express and Prisma. Routes only deal with HTTP, services have the business rules, and
+  `src/domain` is pure functions (status changes, reminder schedule, scan decisions, file rules) with
+  lots of unit tests. Every database query is limited to the signed-in manager's own audits, so nobody
+  can open someone else's data by guessing an ID.
+- **`apps/web`**: Next.js (App Router), TanStack Query, React Hook Form, and UI components built on
+  Radix so they're accessible.
 
-## How files are stored and protected
+## Running it locally
 
-Each file has two halves: the **bytes** in a private S3 bucket and the **facts** (original name, size,
-real type, SHA-256, scan result, retention date) in Postgres, which is the source of truth.
-
-| Step            | What happens                                                                                                                                                                                                                                                                                        |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Upload          | The API issues a 5-minute presigned POST that pins the exact key, type and size; S3 itself refuses anything else. The browser sends the file straight to `quarantine/{requestId}/{fileId}`.                                                                                                         |
-| Check           | The API reads the object once, as a stream: it detects the real type from its first bytes, checks text files are UTF-8, and computes its own SHA-256. Anything wrong is deleted and the owner is told why.                                                                                          |
-| Scan (optional) | With `MALWARE_SCAN_ENABLED=true`, GuardDuty scans `quarantine/` and only "no threats found" moves on; anything else, or no verdict within 30 minutes, is deleted and sent back to the owner. It's a paid AWS service, so the demo deployment runs with it off; the code and its tests are in place. |
-| Keep            | Clean files are copied to `evidence/{audit}/{request}/{submission}/{file}` and get an **Object Lock** retention date. The API's IAM user can't list the bucket, delete evidence or bypass the lock.                                                                                                 |
-| View            | Managers get 60-second links, forced to download (images and PDFs can preview). Files are served from S3's domain, never the app's.                                                                                                                                                                 |
-
-Owner links carry the token in the URL fragment (`/e#…`), which browsers never send to a server, so it
-can't appear in access logs; the page sends it to the API as a header. Only its SHA-256 is stored.
-
-## Run it locally (about 5 minutes)
-
-Requirements: Node 22.9+, pnpm (`corepack enable`), Docker.
+You'll need Node 22.9 or newer, pnpm (`corepack enable`) and Docker. It takes about 5 minutes.
 
 ```bash
 pnpm install
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
 docker compose up -d        # Postgres on :5432 and an S3-compatible server (RustFS) on :9000
-pnpm storage:setup          # create the local bucket: Object Lock, CORS, lifecycle rule
-pnpm db:migrate             # apply migrations (re-run after pulling new ones)
-pnpm db:seed                # demo account and a SOC 2 audit mid-way through, with real files
+pnpm storage:setup          # creates the local bucket with Object Lock, CORS and a cleanup rule
+pnpm db:migrate             # applies the database migrations
+pnpm db:seed                # demo account plus a SOC 2 audit that's half done, with real files
 pnpm dev                    # web on http://localhost:3000, API on http://localhost:4000
 ```
 
-Sign in with the demo login above. Without a Resend key, emails (including owners' magic links) are
-printed to the API log; "Copy link" on any request works too. Malware scanning needs AWS GuardDuty, so
-it's off locally and files are promoted straight after their checks.
+Then sign in with the demo login above. Locally there's no email service, so emails (including the
+owners' upload links) are printed in the API's terminal. "Copy link" on a request works too. Malware
+scanning needs AWS, so it's off locally and files move on right after their checks.
 
 ## Tests
 
 ```bash
 pnpm lint && pnpm typecheck
-pnpm test                 # 162 unit tests: domain rules, parsers, security helpers
-pnpm test:integration     # 81 API tests against real Postgres (docker compose up -d postgres)
-pnpm test:e2e             # Playwright: the full lifecycle in Chromium, plus WCAG checks with axe-core
+pnpm test                 # 170 unit tests: domain rules, parsers, security helpers
+pnpm test:integration     # 88 API tests against a real Postgres (docker compose up -d postgres)
+pnpm test:e2e             # Playwright: the whole flow in Chromium, plus accessibility checks with axe-core
 ```
 
-CI runs all of them on every push, the end-to-end suite against production builds (so the production
-Content-Security-Policy is exercised too), plus a gitleaks secrets scan. What each suite covers, the
-checks done by hand, and the bugs they found are in [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
+GitHub Actions runs all of these on every push, with the end-to-end tests running against production
+builds, and also scans for leaked secrets with gitleaks. The [test plan](docs/TEST_PLAN.md) has more
+detail on what each suite covers.
 
 ## Deploying
 
-The step-by-step account setup is in [docs/phases.md](docs/phases.md) (Prerequisites) and the AWS
-settings, as reviewable JSON, are in [infra/aws/](infra/aws/README.md).
+The AWS settings (bucket policy, CORS, lifecycle rule and the IAM policy) are saved as JSON in
+[infra/aws/](infra/aws/README.md) so they can be checked and recreated.
 
-- **Render (API + Postgres):** New → Blueprint → this repo. [`render.yaml`](render.yaml) creates both
-  in Singapore, generates the secrets, and asks for the rest (Vercel URL, AWS keys, Resend key).
-- **Vercel (web):** import the repo with root directory `apps/web`, and set `API_ORIGIN` (the Render
-  URL) and `STORAGE_ORIGIN` (`https://<bucket>.s3.ap-southeast-1.amazonaws.com`).
-- **cron-job.org**, both with `Authorization: Bearer <CRON_SECRET>`:
-  - every 5 minutes: `POST https://<api>.onrender.com/internal/cron/scan-check` (also keeps the API awake)
+- **Render (API and Postgres):** New → Blueprint → this repo. [`render.yaml`](render.yaml) creates both
+  in Singapore, generates the secrets and asks for the rest (Vercel URL, AWS keys, Resend key).
+- **Vercel (web):** import the repo with `apps/web` as the root directory and set `API_ORIGIN` (the
+  Render URL) and `STORAGE_ORIGIN` (`https://<bucket>.s3.<region>.amazonaws.com`).
+- **cron-job.org**, with the header `Authorization: Bearer <CRON_SECRET>` on both:
+  - every 5 minutes: `POST https://<api>.onrender.com/internal/cron/scan-check` (this also keeps the
+    API awake)
   - daily at 03:30 UTC (09:00 IST): `POST https://<api>.onrender.com/internal/cron/reminders`
-- Then `pnpm db:seed` once against the production database for the demo account.
+- Finally, run `pnpm db:seed` once against the production database to create the demo account.
 
-The API refuses to start in production if storage, the cron secret, export signing or email isn't
-configured.
+The API won't start in production if storage, the cron secret, export signing or email are missing,
+so a half-configured deploy fails straight away instead of breaking later.
 
 ## Known limitations
 
-- **Cold starts:** the free Render instance sleeps after 15 idle minutes; the 5-minute cron call keeps
-  it awake, but the first request after an outage can take up to a minute.
-- **Free Postgres expires** 30 days after creation (about 22 Nov 2026 for this deployment).
-- **Long-lived AWS key:** Render runs outside AWS, so the API uses an IAM access key. It's least
-  privilege (can't list, delete evidence or bypass Object Lock); short-lived credentials are the fix.
-- **No malware scanning in the demo deployment.** GuardDuty Malware Protection is a paid AWS service,
-  so it's switched off (`MALWARE_SCAN_ENABLED=false`). Files are still checked by their contents,
-  fingerprinted, quarantined until checked, and locked. Turning it on is one setting plus enabling
-  GuardDuty on the bucket; the scan path is covered by integration tests.
-- Magic links are bearer tokens: anyone holding one can upload to that one request (scoped, expiring,
-  revocable, rate-limited, content-checked and reviewed).
-- A day the reminder job misses is skipped rather than sent late.
-- No password reset, one manager per audit, no dark mode, rate limits kept in memory (fine for one
-  instance).
-
-## Attributions
-
-UI primitives follow the [shadcn/ui](https://ui.shadcn.com) pattern on top of
-[Radix UI](https://www.radix-ui.com); icons from [Lucide](https://lucide.dev); local S3 by
-[RustFS](https://github.com/rustfs/rustfs). Built with the help of an AI coding assistant (Claude
-Code); every part of the code is understood and can be explained by the author.
+- **Cold starts.** The free Render server sleeps after 15 idle minutes. The 5-minute cron call keeps
+  it awake most of the time, but after an outage the first request can take up to a minute.
+- **The free database expires** 30 days after it was created (around 22 Nov 2026 for this deployment).
+- **No malware scanning on the live demo.** GuardDuty Malware Protection costs money, so it's switched
+  off (`MALWARE_SCAN_ENABLED=false`). Files are still type-checked, fingerprinted, quarantined and
+  locked. Turning it on is one setting plus enabling GuardDuty on the bucket, and the scan code is
+  covered by tests.
+- **Email needs a verified domain.** Until a domain is verified in Resend, it only delivers to the
+  Resend account's own address, so emails to anyone else fail. "Copy link" still works in the meantime.
+- **Long-lived AWS key.** Render runs outside AWS, so the API uses an IAM access key. It has the
+  minimum permissions it needs (it can't list the bucket, delete evidence or remove the lock), but
+  short-lived credentials would be better.
+- **Upload links work like passwords.** Anyone with an owner's link can upload to that one request.
+  The links are limited to one request, expire after 30 days, can be revoked and are rate-limited, and
+  everything uploaded is still checked and reviewed. Sending a new link doesn't cancel older ones.
+- **Rate limits are kept in memory**, which is fine for one server but wouldn't work with several.
+  Someone calling the API directly instead of going through Vercel could also fake their IP address
+  to get around them.
+- If the reminder job misses a day, that day's reminders are skipped, not sent late.
+- Some things I didn't get to: password reset, more than one manager per audit, and dark mode.

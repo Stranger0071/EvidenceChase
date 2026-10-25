@@ -1,8 +1,8 @@
 # AWS setup
 
 These files document every AWS setting EvidenceChase depends on, so the bucket and IAM user can be
-reviewed and recreated exactly. The S3 upload pipeline that uses them arrives in Phase 3. See
-`docs/PRD.md` §8.4 for the design and `docs/phases.md` (Prerequisites) for the step-by-step console setup.
+reviewed and recreated exactly. The main [README](../../README.md#how-uploaded-files-are-checked)
+explains how the upload pipeline uses them.
 
 | File                 | Applied to                            | Purpose                                                                |
 | -------------------- | ------------------------------------- | ---------------------------------------------------------------------- |
@@ -13,7 +13,7 @@ reviewed and recreated exactly. The S3 upload pipeline that uses them arrives in
 
 Bucket settings that are chosen at creation time and have no JSON file:
 
-- Region `ap-southeast-1`
+- Region `ap-southeast-2` (the live deployment's bucket)
 - **Object Lock enabled**, which also turns on versioning
 - Block Public Access: all four settings on
 - Object Ownership: bucket owner enforced (ACLs disabled)
