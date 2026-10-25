@@ -12,7 +12,7 @@ file is checked before anyone opens it, and the dashboard always shows how ready
 
 |                 |                                                                                |
 | --------------- | ------------------------------------------------------------------------------ |
-| **Live app**    | _https://evidence-chase.vercel.app/_                         |
+| **Live app**    | _https://evidence-chase.vercel.app/_                                           |
 | **Demo login**  | `demo@evidencechase.app` / `evidence-demo-2026`                                |
 | **Demo video**  | _add the unlisted YouTube / Drive link_                                        |
 | **Write-up**    | [WRITEUP.md](WRITEUP.md) (problem, decisions, cuts, what broke)                |
