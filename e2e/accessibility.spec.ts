@@ -7,6 +7,18 @@ import { createAudit, expect, samplePdf, signUp, test } from './fixtures';
  * and critical problems fail the test; each one is listed with the elements involved.
  */
 async function expectAccessible(page: Page, screen: string) {
+  // Scan the page at rest. Mid-transition (a toast or dialog fading in) text is partly
+  // transparent, so axe measures a contrast the user never actually sees once it settles.
+  // Endless animations (spinners) never finish, so they're left out.
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .every(
+        (animation) =>
+          animation.playState !== 'running' ||
+          animation.effect?.getTiming().iterations === Infinity,
+      ),
+  );
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze();
