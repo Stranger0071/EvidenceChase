@@ -12,6 +12,8 @@ export function createLogger(env: Pick<Env, 'NODE_ENV' | 'LOG_LEVEL'>): Logger {
         'req.headers.cookie',
         'req.headers.authorization',
         'req.headers["x-access-token"]',
+        // Vercel's proxy signature is a bearer credential too.
+        'req.headers["x-vercel-proxy-signature"]',
         'res.headers["set-cookie"]',
       ],
       censor: '[redacted]',

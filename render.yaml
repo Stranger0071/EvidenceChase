@@ -37,9 +37,10 @@ services:
         generateValue: true
       - key: EXPORT_SIGNING_SECRET
         generateValue: true
-      # Vercel → Render: two proxies. Check req.ip in the logs after the first deploy.
+      # Vercel → Cloudflare → Render's load balancer → Render's local proxy: four hops in
+      # x-forwarded-for before the real client (checked against production request logs).
       - key: TRUST_PROXY
-        value: '2'
+        value: '4'
       - key: WEB_ORIGIN
         sync: false # https://<your-app>.vercel.app
       # API_PUBLIC_URL isn't needed: the API uses RENDER_EXTERNAL_URL, which Render sets itself.
