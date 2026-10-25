@@ -40,7 +40,13 @@ export function Providers({ children }: { children: ReactNode }) {
     <QueryClientProvider client={queryClient}>
       {children}
       {/* Plain toasts (dark text on white, with icons): richColors fails WCAG contrast. */}
-      <Toaster position="bottom-right" closeButton />
+      <Toaster
+        position="bottom-right"
+        closeButton
+        toastOptions={{
+          style: { color: '#1a1a1a', backgroundColor: '#ffffff' },
+        }}
+      />
     </QueryClientProvider>
   );
 }
