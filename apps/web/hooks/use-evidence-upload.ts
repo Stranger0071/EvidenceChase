@@ -111,7 +111,7 @@ export function useEvidenceUpload(token: string) {
           const results = await Promise.allSettled(
             fresh.map(async (item, index) => {
               const prepared = uploads[index]!;
-              update(item.key, { status: 'uploading', progress: 0 });
+              update(item.key, { status: 'uploading', progress: 0, error: undefined });
               await uploadToStorage(prepared.upload, item.file, (progress) =>
                 update(item.key, { progress }),
               );
@@ -119,17 +119,22 @@ export function useEvidenceUpload(token: string) {
               fileIds.set(item.key, prepared.fileId);
             }),
           );
+          // A failed upload can be retried, so it goes back to "ready" (keeping its message) and is
+          // uploaded again on the next Submit. "error" is for files that can never be accepted.
           results.forEach((result, index) => {
             if (result.status === 'rejected') {
               update(fresh[index]!.key, {
-                status: 'error',
+                status: 'ready',
+                progress: 0,
                 error: errorMessage(result.reason),
                 fileId: undefined,
               });
             }
           });
           if (results.some((result) => result.status === 'rejected')) {
-            setError('Some files failed to upload. Remove them or try again.');
+            setError(
+              'Some files failed to upload. Press Submit to try them again, or remove them.',
+            );
             return null;
           }
         }

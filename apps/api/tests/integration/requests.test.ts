@@ -147,6 +147,25 @@ describe('evidence requests', () => {
     expect(blocked.body.error.code).toBe('HAS_SUBMISSIONS');
   });
 
+  it('deletes a request that was reminded and had an unfinished upload', async () => {
+    const { agent, base } = await setup();
+    const created = await agent.post(base).set('Origin', WEB_ORIGIN).send(request).expect(201);
+    const requestId: string = created.body.request.id;
+    await agent.post(`${base}/${requestId}/nudge`).set('Origin', WEB_ORIGIN).expect(204);
+    await ctx.prisma.evidenceFile.create({
+      data: {
+        requestId,
+        storageKey: `quarantine/${requestId}/abandoned`,
+        originalName: 'draft.pdf',
+        declaredMime: 'application/pdf',
+        sizeBytes: 10,
+      },
+    });
+
+    await agent.delete(`${base}/${requestId}`).set('Origin', WEB_ORIGIN).expect(204);
+    expect(await ctx.prisma.evidenceRequest.count({ where: { id: requestId } })).toBe(0);
+  });
+
   it("can't reach a request through another manager's audit", async () => {
     const app = ctx.makeApp();
     const alice = await setup(app);

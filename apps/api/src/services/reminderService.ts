@@ -5,7 +5,7 @@ import { computeReminderKind, describeDue } from '../domain/reminderSchedule';
 import { ConflictError, DomainError, NotFoundError } from '../errors';
 import type { Logger } from '../lib/logger';
 import type { Repositories } from '../repositories';
-import type { RequestForReminder } from '../repositories/reminderRepository';
+import { reminderCapKey, type RequestForReminder } from '../repositories/reminderRepository';
 import { assertNotArchived, type Clock } from './auditService';
 import { fromIsoDate } from './mappers';
 import type { NotificationService } from './notificationService';
@@ -83,12 +83,15 @@ export function createReminderService(
       });
 
       const alreadyEmailed = await reminders.ownersRemindedOn(sentOn);
-      const eligible = due.filter(({ request }) => !alreadyEmailed.has(request.ownerEmail));
+      const capKeyOf = (request: RequestForReminder) =>
+        reminderCapKey(request.audit.ownerId, request.ownerEmail);
+      const eligible = due.filter(({ request }) => !alreadyEmailed.has(capKeyOf(request)));
       const claims = await reminders.claim(
         eligible.map(({ request, kind }) => ({ requestId: request.id, kind, sentOn })),
       );
       const claimIdByRequest = new Map(claims.map((claim) => [claim.requestId, claim.id]));
 
+      // One digest per manager and owner, so an email never lists another company's audits.
       const byOwner = new Map<
         string,
         Array<{ request: RequestForReminder; claimId: string; kind: ReminderKind }>
@@ -96,10 +99,8 @@ export function createReminderService(
       for (const { request, kind } of eligible) {
         const claimId = claimIdByRequest.get(request.id);
         if (!claimId) continue;
-        byOwner.set(request.ownerEmail, [
-          ...(byOwner.get(request.ownerEmail) ?? []),
-          { request, claimId, kind },
-        ]);
+        const key = capKeyOf(request);
+        byOwner.set(key, [...(byOwner.get(key) ?? []), { request, claimId, kind }]);
       }
 
       const summary: ReminderRunSummary = {
@@ -112,7 +113,8 @@ export function createReminderService(
         failed: 0,
       };
 
-      for (const [email, items] of byOwner) {
+      for (const items of byOwner.values()) {
+        const email = items[0]!.request.ownerEmail;
         const name = items.find((item) => item.request.ownerName)?.request.ownerName ?? null;
         if (await sendToOwner({ email, name }, items, today, { type: 'SYSTEM' })) {
           summary.emailsSent += 1;
@@ -141,7 +143,11 @@ export function createReminderService(
 
       const today = todayIsoDate(clock());
       const sentOn = fromIsoDate(today);
-      if ((await reminders.ownersRemindedOn(sentOn)).has(request.ownerEmail)) {
+      if (
+        (await reminders.ownersRemindedOn(sentOn)).has(
+          reminderCapKey(managerId, request.ownerEmail),
+        )
+      ) {
         throw new ConflictError(
           `${request.ownerEmail} has already had a reminder today. You can nudge again tomorrow.`,
           'ALREADY_REMINDED_TODAY',
@@ -161,7 +167,14 @@ export function createReminderService(
         { email: request.ownerEmail, name: request.ownerName },
         [
           {
-            request: { ...request, audit: { id: request.audit.id, name: request.audit.name } },
+            request: {
+              ...request,
+              audit: {
+                id: request.audit.id,
+                name: request.audit.name,
+                ownerId: request.audit.ownerId,
+              },
+            },
             claimId: claim.id,
             kind: 'NUDGE',
           },

@@ -47,6 +47,21 @@ describe('malware scanning', () => {
       .expect(200);
   });
 
+  it('refuses a file replaced in quarantine after it was checked', async () => {
+    const { key, fileId, submissions } = await awaitingScan();
+
+    // The upload link is still valid, so the owner swaps in different bytes, which GuardDuty clears.
+    ctx.storage.putObject(key, Buffer.from('MZ not the PDF that was checked'), 'application/pdf');
+    ctx.storage.setTags(key, { [GUARDDUTY_SCAN_TAG]: 'NO_THREATS_FOUND' });
+    await submissions();
+
+    expect(await ctx.prisma.evidenceFile.findUnique({ where: { id: fileId } })).toMatchObject({
+      state: 'REJECTED',
+      rejectReason: 'the file was replaced after it was checked, so please upload it again',
+    });
+    expect([...ctx.storage.objects.keys()].some((k) => k.startsWith('evidence/'))).toBe(false);
+  });
+
   it('deletes an infected file and sends the request back to the owner automatically', async () => {
     const { app, token, requestId, key, fileId, submissions } = await awaitingScan();
 

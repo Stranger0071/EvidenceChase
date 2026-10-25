@@ -11,7 +11,7 @@ import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Readable } from 'node:stream';
 import { contentDisposition } from '../lib/http';
-import type { ObjectHead, PresignedPost, StoragePort } from '../ports/storage';
+import type { IfMatch, ObjectHead, PresignedPost, StoragePort } from '../ports/storage';
 
 export interface S3StorageConfig {
   region: string;
@@ -82,16 +82,20 @@ export class S3StorageAdapter implements StoragePort {
       const response = await this.client.send(
         new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
       );
-      return { sizeBytes: response.ContentLength ?? 0, contentType: response.ContentType ?? null };
+      return {
+        sizeBytes: response.ContentLength ?? 0,
+        contentType: response.ContentType ?? null,
+        etag: response.ETag ?? null,
+      };
     } catch (error) {
       if (isNotFound(error)) return null;
       throw error;
     }
   }
 
-  async getStream(key: string): Promise<Readable> {
+  async getStream(key: string, options: IfMatch = {}): Promise<Readable> {
     const response = await this.client.send(
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      new GetObjectCommand({ Bucket: this.bucket, Key: key, IfMatch: options.ifMatch }),
     );
     // In Node.js the SDK returns the body as a Readable stream.
     return response.Body as Readable;
@@ -109,11 +113,12 @@ export class S3StorageAdapter implements StoragePort {
   }
 
   /** Server-side copy within the bucket: the bytes never pass through the API. */
-  async copy(sourceKey: string, destinationKey: string): Promise<void> {
+  async copy(sourceKey: string, destinationKey: string, options: IfMatch = {}): Promise<void> {
     await this.client.send(
       new CopyObjectCommand({
         Bucket: this.bucket,
         CopySource: `${this.bucket}/${encodeURIComponent(sourceKey).replaceAll('%2F', '/')}`,
+        CopySourceIfMatch: options.ifMatch,
         Key: destinationKey,
       }),
     );

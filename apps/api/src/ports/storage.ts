@@ -13,6 +13,19 @@ export interface PresignedPost {
 export interface ObjectHead {
   sizeBytes: number;
   contentType: string | null;
+  /** Changes whenever the object's bytes do, so reads and copies can be pinned to one version. */
+  etag: string | null;
+}
+
+/** Only act on the object if it still has this ETag; otherwise fail with {@link isPreconditionFailed}. */
+export interface IfMatch {
+  ifMatch?: string;
+}
+
+/** True for the error S3 (and the fake) raise when an `ifMatch` condition no longer holds. */
+export function isPreconditionFailed(error: unknown): boolean {
+  const name = (error as { name?: unknown } | null)?.name;
+  return name === 'PreconditionFailed';
 }
 
 export interface StoragePort {
@@ -34,9 +47,9 @@ export interface StoragePort {
   }): Promise<string>;
   /** Object metadata, or null when the key doesn't exist. */
   head(key: string): Promise<ObjectHead | null>;
-  getStream(key: string): Promise<Readable>;
+  getStream(key: string, options?: IfMatch): Promise<Readable>;
   getTags(key: string): Promise<Record<string, string>>;
-  copy(sourceKey: string, destinationKey: string): Promise<void>;
+  copy(sourceKey: string, destinationKey: string, options?: IfMatch): Promise<void>;
   /** S3 Object Lock retention (GOVERNANCE mode): the object can't be deleted before this date. */
   putRetention(key: string, retainUntil: Date): Promise<void>;
   delete(key: string): Promise<void>;

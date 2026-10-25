@@ -105,10 +105,16 @@ function subscribeToHash(onChange: () => void) {
   return () => window.removeEventListener('hashchange', onChange);
 }
 
+/** Tokens are base64url. Anything else (a mangled or hand-edited link) is treated as missing. */
+const TOKEN_PATTERN = /^[A-Za-z0-9_-]+$/;
+
 function useFragmentToken(): string | null {
   return useSyncExternalStore(
     subscribeToHash,
-    () => decodeURIComponent(window.location.hash.slice(1)),
+    () => {
+      const raw = window.location.hash.slice(1);
+      return TOKEN_PATTERN.test(raw) ? raw : '';
+    },
     () => null,
   );
 }

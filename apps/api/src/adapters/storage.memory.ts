@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
-import type { ObjectHead, PresignedPost, StoragePort } from '../ports/storage';
+import type { IfMatch, ObjectHead, PresignedPost, StoragePort } from '../ports/storage';
 
 interface StoredObject {
   data: Buffer;
@@ -30,21 +31,23 @@ export class MemoryStorageAdapter implements StoragePort {
 
   async head(key: string): Promise<ObjectHead | null> {
     const object = this.objects.get(key);
-    return object ? { sizeBytes: object.data.length, contentType: object.contentType } : null;
+    return object
+      ? { sizeBytes: object.data.length, contentType: object.contentType, etag: etagOf(object) }
+      : null;
   }
 
-  async getStream(key: string): Promise<Readable> {
-    return Readable.from([this.require(key).data]);
+  async getStream(key: string, options: IfMatch = {}): Promise<Readable> {
+    return Readable.from([this.require(key, options).data]);
   }
 
   async getTags(key: string): Promise<Record<string, string>> {
     return { ...this.require(key).tags };
   }
 
-  async copy(sourceKey: string, destinationKey: string): Promise<void> {
+  async copy(sourceKey: string, destinationKey: string, options: IfMatch = {}): Promise<void> {
     if (this.failNextCopy.delete(sourceKey))
       throw new Error(`Simulated copy failure: ${sourceKey}`);
-    const source = this.require(sourceKey);
+    const source = this.require(sourceKey, options);
     this.objects.set(destinationKey, { ...source, tags: { ...source.tags } });
   }
 
@@ -64,9 +67,19 @@ export class MemoryStorageAdapter implements StoragePort {
     this.require(key).tags = tags;
   }
 
-  private require(key: string): StoredObject {
+  private require(key: string, { ifMatch }: IfMatch = {}): StoredObject {
     const object = this.objects.get(key);
     if (!object) throw Object.assign(new Error(`No such key: ${key}`), { name: 'NoSuchKey' });
+    if (ifMatch !== undefined && ifMatch !== etagOf(object)) {
+      throw Object.assign(new Error(`Changed since ${ifMatch}: ${key}`), {
+        name: 'PreconditionFailed',
+      });
+    }
     return object;
   }
+}
+
+/** Like S3's: derived from the bytes, so replacing them changes it. */
+function etagOf(object: StoredObject): string {
+  return `"${createHash('md5').update(object.data).digest('hex')}"`;
 }

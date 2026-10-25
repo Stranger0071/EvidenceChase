@@ -183,7 +183,8 @@ model ReminderLog {
   @@unique([requestId, kind, sentOn])
 }
 
-/// Append-only. The repository layer exposes no update or delete for this table.
+/// Append-only: entries are never updated. They're only deleted together with a request that
+/// never received evidence (see requestRepository.delete).
 model ActivityLog {
   id         String         @id @default(uuid()) @db.Uuid
   requestId  String         @db.Uuid

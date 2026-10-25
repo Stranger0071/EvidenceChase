@@ -122,8 +122,17 @@ export function createRequestRepository(prisma: PrismaClient) {
       });
     },
 
+    /**
+     * Deletes a request that has no submissions, with what it leaves behind: uploads that were
+     * never submitted and its reminder history. Submissions keep their foreign-key guard, so if
+     * one lands in the meantime, the whole delete fails instead of losing evidence.
+     */
     async delete(id: string): Promise<void> {
-      await prisma.evidenceRequest.delete({ where: { id } });
+      await prisma.$transaction([
+        prisma.evidenceFile.deleteMany({ where: { requestId: id, submissionId: null } }),
+        prisma.activityLog.deleteMany({ where: { requestId: id } }),
+        prisma.evidenceRequest.delete({ where: { id } }),
+      ]);
     },
   };
 }

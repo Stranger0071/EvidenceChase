@@ -2,8 +2,16 @@ import type { Prisma, PrismaClient, ReminderKind } from '@prisma/client';
 import { OPEN_STATUSES } from '../domain/overdue';
 
 const withAuditName = {
-  audit: { select: { id: true, name: true } },
+  audit: { select: { id: true, name: true, ownerId: true } },
 } satisfies Prisma.EvidenceRequestInclude;
+
+/**
+ * The daily cap is per manager and owner: one company's reminders must neither hold back
+ * another's nor reveal to it who else is chasing that address.
+ */
+export function reminderCapKey(managerId: string, ownerEmail: string): string {
+  return `${managerId}\n${ownerEmail}`;
+}
 
 export type RequestForReminder = Prisma.EvidenceRequestGetPayload<{
   include: typeof withAuditName;
@@ -29,14 +37,19 @@ export function createReminderRepository(prisma: PrismaClient) {
       });
     },
 
-    /** Owners who have already had a reminder email today (the one-email-per-owner-per-day cap). */
+    /**
+     * Owners who have already had a reminder email today (the one-email-per-owner-per-day cap),
+     * as {@link reminderCapKey}s.
+     */
     async ownersRemindedOn(sentOn: Date): Promise<Set<string>> {
       const rows = await prisma.reminderLog.findMany({
         where: { sentOn },
-        select: { request: { select: { ownerEmail: true } } },
+        select: { request: { select: { ownerEmail: true, audit: { select: { ownerId: true } } } } },
         distinct: ['requestId'],
       });
-      return new Set(rows.map((row) => row.request.ownerEmail));
+      return new Set(
+        rows.map((row) => reminderCapKey(row.request.audit.ownerId, row.request.ownerEmail)),
+      );
     },
 
     /**

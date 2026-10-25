@@ -2,14 +2,21 @@ import type { Env } from '../config/env';
 import { transition } from '../domain/requestStatus';
 import { decideScanOutcome, type ScanDecision } from '../domain/scanOutcome';
 import { ConflictError } from '../errors';
+import { inspectObject } from '../lib/inspectObject';
 import type { Logger } from '../lib/logger';
-import type { StoragePort } from '../ports/storage';
+import { isPreconditionFailed, type StoragePort } from '../ports/storage';
 import type { Repositories } from '../repositories';
 import type { FileForScan } from '../repositories/fileRepository';
 import type { Clock } from './auditService';
 import type { NotificationService } from './notificationService';
 
 const BATCH_SIZE = 50;
+
+const CHANGED_AFTER_CHECK = {
+  kind: 'reject',
+  scanStatus: 'FAILED',
+  reason: 'the file was replaced after it was checked, so please upload it again',
+} as const satisfies ScanDecision;
 /** Upload links last 5 minutes, so a file still waiting for upload after a day was abandoned. */
 const ABANDONED_UPLOAD_HOURS = 24;
 
@@ -68,24 +75,49 @@ export function createScanService(
     }
   }
 
+  /**
+   * Whether the quarantined object still holds the exact bytes that were checked at submit. The
+   * owner's upload link stays valid for a few minutes after it's issued, so it could have been
+   * used again to swap in different bytes (say, a program in place of a checked PDF).
+   */
+  async function unchangedSinceSubmit(file: FileForScan, etag: string | undefined) {
+    if (!file.sha256) return false;
+    try {
+      const stream = await storage.getStream(file.storageKey, { ifMatch: etag });
+      const { sha256 } = await inspectObject(stream, { checkUtf8: false });
+      return sha256 === file.sha256;
+    } catch (error) {
+      if (isPreconditionFailed(error)) return false;
+      throw error;
+    }
+  }
+
+  /** Copies only the version that was just re-checked (`etag`), so nothing can slip in between. */
   async function promote(
     file: FileForScan & { submissionId: string },
     scanStatus: 'NO_THREATS_FOUND' | 'NOT_SCANNED',
-  ) {
+    etag: string | undefined,
+  ): Promise<'promoted' | 'changed'> {
     const evidenceKey = evidenceKeyFor({ ...file, auditId: file.request.auditId });
-    await storage.copy(file.storageKey, evidenceKey);
+    try {
+      await storage.copy(file.storageKey, evidenceKey, { ifMatch: etag });
+    } catch (error) {
+      if (isPreconditionFailed(error)) return 'changed';
+      throw error;
+    }
     const verified = await files.markVerified(file.id, {
       storageKey: evidenceKey,
       scanStatus,
       verifiedAt: clock(),
     });
-    if (!verified) return; // Another run promoted it first.
+    if (!verified) return 'promoted'; // Another run promoted it first.
 
     await applyRetention(file.id, evidenceKey);
     // The quarantine lifecycle rule removes it anyway after a day; this just tidies up sooner.
     await storage.delete(file.storageKey).catch((error: unknown) => {
       logger.warn({ err: error, fileId: file.id }, 'Could not delete quarantine copy');
     });
+    return 'promoted';
   }
 
   async function reject(file: FileForScan, decision: Extract<ScanDecision, { kind: 'reject' }>) {
@@ -152,7 +184,16 @@ export function createScanService(
         await reject(file, decision);
         return 'rejected';
       }
-      await promote({ ...file, submissionId: file.submissionId }, decision.scanStatus);
+
+      const etag = exists?.etag ?? undefined;
+      const outcome = (await unchangedSinceSubmit(file, etag))
+        ? await promote({ ...file, submissionId: file.submissionId }, decision.scanStatus, etag)
+        : 'changed';
+      if (outcome === 'changed') {
+        logger.warn({ fileId: file.id }, 'Quarantined file changed after it was checked');
+        await reject(file, CHANGED_AFTER_CHECK);
+        return 'rejected';
+      }
       return 'promoted';
     } catch (error) {
       // The file stays AWAITING_SCAN and is retried on the next run.
