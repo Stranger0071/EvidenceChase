@@ -1,4 +1,4 @@
-import { Router, type RequestHandler } from 'express';
+import { Router, type RequestHandler, type Response } from 'express';
 import type { Logger } from '../lib/logger';
 import { requireCronSecret } from '../middleware/cronAuth';
 import type { ReminderService } from '../services/reminderService';
@@ -22,13 +22,19 @@ export function createInternalRouter(deps: {
 
   function backgroundJob(name: string, run: () => Promise<object>): RequestHandler {
     let running = false;
+    // An empty 202 with an explicit zero length: schedulers (cron-job.org) only need the status, and
+    // a bodiless response can't trip their response-size limits. Results go to the logs.
+    const accepted = (res: Response) => res.status(202).set('Content-Length', '0').end();
+
     return (_req, res) => {
       if (running) {
-        res.status(202).json({ started: false, reason: 'already running' });
+        logger.info({ job: name }, `Job ${name} already running; skipped`);
+        accepted(res);
         return;
       }
       running = true;
-      res.status(202).json({ started: true });
+      logger.info({ job: name }, `Job ${name} started`);
+      accepted(res);
 
       run()
         .then((summary) => logger.info({ job: name, ...summary }, `Job ${name} finished`))
